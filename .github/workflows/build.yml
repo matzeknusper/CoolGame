@@ -5,7 +5,7 @@ on:
   workflow_dispatch:
 
 permissions:
-  contents: read
+  contents: write # needed to attach the APK to the "latest" release
 
 concurrency:
   group: build-${{ github.ref }}
@@ -60,3 +60,17 @@ jobs:
           name: WuselWars-web
           path: dist
           if-no-files-found: error
+
+      # Rolling pre-release so the newest APK always has a direct download link:
+      # https://github.com/<owner>/<repo>/releases/tag/latest
+      - name: Publish APK to the "latest" release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          cp dist/standalone.html out/WuselWars-web.html
+          gh release delete latest --yes --cleanup-tag || true
+          sleep 3
+          gh release create latest out/WuselWars.apk out/WuselWars-web.html \
+            --target "$GITHUB_SHA" --prerelease \
+            --title "Wusel Wars – aktueller Build" \
+            --notes "Automatischer Build von \`${GITHUB_REF_NAME}\` (${GITHUB_SHA::7}). **WuselWars.apk** auf dem Android-Gerät öffnen und installieren (Installation aus unbekannten Quellen erlauben). **WuselWars-web.html** ist das komplette Spiel als einzelne Datei für den Browser."

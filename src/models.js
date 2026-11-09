@@ -322,9 +322,9 @@ export function decorGeo(kind, zEnd, seed0 = 1, density = 1) {
   for (let i = 0; i < count; i++) {
     const side = i % 2 ? 1 : -1;
     const near = r() < 0.55;
-    const x = side * (near ? rr(8.5, 16) : rr(16, 46));
-    const z = 14 - (i / count) * len + rr(-3, 3);
     const big = !near && r() < 0.5;
+    const x = side * (near ? rr(10, 17) : big ? rr(28, 52) : rr(17, 40));
+    const z = 14 - (i / count) * len + rr(-3, 3);
     const kindIdx = big ? 2 : r() < 0.6 ? 0 : 1;
     const s = (big ? rr(2.2, 4.2) : rr(0.9, 1.8)) * (near ? 1 : 1.3);
     const y = B.y(near, r);

@@ -16,6 +16,11 @@ const AUTOBOT = params.has('bot');
 const NOADAPT = params.has('noadapt');
 
 let save = loadSave();
+if (DEBUG && params.get('up')) {
+  // debug: ?up=rate,multi,mega,shield,coins (not persisted unless something else saves)
+  const u = params.get('up').split(',').map(Number);
+  save.up = { rate: u[0] | 0, multi: u[1] | 0, mega: u[2] | 0, shield: u[3] | 0, coins: u[4] | 0 };
+}
 setLang(save.set.lang);
 
 const canvas = document.getElementById('c');
@@ -43,7 +48,7 @@ let levelN = 1;
 let hintOn = false;
 let lastVib = 0;
 
-const input = { down: false, id: -1, startX: 0, startLx: 0, target: 0, keyL: false, keyR: false, keyFire: false };
+const input = { down: false, id: -1, startX: 0, lastX: 0, startLx: 0, target: 0, keyL: false, keyR: false, keyFire: false };
 
 function skinColor() {
   return (SKINS.find((s) => s.id === save.skin) || SKINS[0]).color;
@@ -191,12 +196,13 @@ function bindInput() {
     audio.unlock();
     if (mode !== 'play') return;
     input.down = true; input.id = e.pointerId;
-    input.startX = e.clientX; input.startLx = sim.lx;
+    input.startX = input.lastX = e.clientX; input.startLx = sim.lx;
     try { canvas.setPointerCapture(e.pointerId); } catch (err) { /* ignore */ }
     if (hintOn) { hintOn = false; ui.hint(false); }
   });
   canvas.addEventListener('pointermove', (e) => {
     if (!input.down || e.pointerId !== input.id) return;
+    input.lastX = e.clientX;
     input.target = input.startLx + (e.clientX - input.startX) * sens();
     // re-anchor at the track edges so reversing direction responds immediately
     const lim = HW - 0.7;
@@ -305,6 +311,10 @@ function frame(ts) {
   } else if (mode === 'play') {
     if (bot) bot.update(dt);
     else {
+      if (sim.state === STATE.ADVANCE) {
+        // the launcher drives itself to the next stage: re-anchor the drag to where it is
+        input.target = sim.lx; input.startLx = sim.lx; input.startX = input.lastX;
+      }
       if (input.keyL) input.target -= 14 * dt;
       if (input.keyR) input.target += 14 * dt;
       input.target = Math.max(-HW + 0.7, Math.min(HW - 0.7, input.target));
@@ -360,9 +370,12 @@ async function boot() {
   setTimeout(() => document.getElementById('boot').remove(), 700);
   requestAnimationFrame((ts) => { last = ts; requestAnimationFrame(frame); });
   if (DEBUG) window.__game = { get sim() { return sim; }, get renderer() { return renderer; }, save, startLevel, startMenu, handlers, ui };
-  if ('serviceWorker' in navigator && location.protocol === 'https:' && !params.has('nosw')) {
-    navigator.serviceWorker.register('sw.js').catch(() => {});
-  }
+  // only the PWA build (which links a manifest) ships a service worker
+  try {
+    if ('serviceWorker' in navigator && location.protocol === 'https:' && document.querySelector('link[rel=manifest]') && !params.has('nosw')) {
+      navigator.serviceWorker.register('sw.js').catch(() => {});
+    }
+  } catch (e) { /* sandboxed frame */ }
 }
 
 boot().catch((e) => {

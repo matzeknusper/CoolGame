@@ -244,8 +244,9 @@ export class Renderer {
     this.cam.aspect = w / h;
     // portrait screens need the camera further back so the whole track width stays visible
     const a = w / h;
-    this.cam.fov = a < 1 ? 60 : 46;
-    this.camBack = a < 0.75 ? Math.min(1.75, 0.62 / a + 0.25) : 1;
+    this.cam.fov = a < 1 ? 60 : 50;
+    this.camBack = a < 0.75 ? Math.min(1.75, 0.62 / a + 0.25) : a < 1 ? 1.05 : 1.3;
+    this.camAhead = a < 1 ? 9.5 : 6.5;
     this.cam.updateProjectionMatrix();
     this.pNorm.mat.uniforms.uScale.value = h * dpr * 0.9;
     this.pAdd.mat.uniforms.uScale.value = h * dpr * 0.9;
@@ -270,6 +271,8 @@ export class Renderer {
       if (o.material && o.userData.ownMat) { if (o.material.map && o.userData.ownMap) o.material.map.dispose(); o.material.dispose(); }
     });
     for (const d of this.dyn || []) d.tex.dispose();
+    if (this._crateMat) { this._crateMat.map.dispose(); this._crateMat.dispose(); this._crateMat = null; }
+    if (this.levelGroup.userData.turretGeo) this.levelGroup.userData.turretGeo.dispose();
     this.levelGroup = null;
     this.rings.clear(); this.texts.clear();
     this.pNorm.n = 0; this.pAdd.n = 0;
@@ -835,7 +838,7 @@ export class Renderer {
     const k = this.camBack;
     const lz = sim.lz, lx = sim.lx;
     let px = lx * 0.45, py = 9.6 * k, pz = lz + 9.2 * k;
-    let tx = lx * 0.3, ty = 0.6, tz = lz - 9.5;
+    let tx = lx * 0.3, ty = 0.6, tz = lz - this.camAhead;
     if (menu) {
       // slow cinematic sway behind the menu
       px = Math.sin(this.time * 0.25) * 5; py = 8.5 * k; pz = lz + 10 * k;
