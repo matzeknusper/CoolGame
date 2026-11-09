@@ -53,8 +53,9 @@ Nützliche URL-Parameter: `?debug` (FPS-Anzeige), `?level=25` (direkt in ein Lev
 
 ## APK bauen
 
-Die APK wird von GitHub Actions gebaut (`.github/workflows/build.yml`) und hängt als Artefakt
-**WuselWars-apk** an jedem Workflow-Lauf. Lokal (mit installiertem Android SDK):
+Die APK wird bei jedem Push von GitHub Actions gebaut (`.github/workflows/build.yml`). Der jeweils neueste Build
+liegt als **WuselWars.apk** im Release [`latest`](../../releases/tag/latest), zusätzlich hängt er als Artefakt
+an jedem Workflow-Lauf. Lokal (mit installiertem Android SDK):
 
 ```bash
 npm run build
