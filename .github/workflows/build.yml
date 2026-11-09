@@ -1,0 +1,62 @@
+name: Build
+
+on:
+  push:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: build-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Balance check (a bot plays all 60 levels)
+        run: npm test
+
+      - name: Build web app
+        run: npm run build
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 17
+
+      - uses: gradle/actions/setup-gradle@v4
+
+      - name: Build APK
+        working-directory: android
+        run: ./gradlew --no-daemon assembleRelease
+
+      - name: Collect artifacts
+        run: |
+          mkdir -p out
+          cp android/app/build/outputs/apk/release/app-release.apk out/WuselWars.apk
+          ls -la out dist
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: WuselWars-apk
+          path: out/WuselWars.apk
+          if-no-files-found: error
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: WuselWars-web
+          path: dist
+          if-no-files-found: error

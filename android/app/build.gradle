@@ -1,0 +1,47 @@
+plugins {
+    id 'com.android.application'
+}
+
+android {
+    namespace 'com.wuselwars.game'
+    compileSdk 35
+
+    defaultConfig {
+        applicationId 'com.wuselwars.game'
+        minSdk 24
+        targetSdk 35
+        versionCode 1
+        versionName '1.0.0'
+    }
+
+    // Public test key so every build can be installed over the previous one.
+    // Replace it with your own private keystore before publishing to a store.
+    signingConfigs {
+        shared {
+            storeFile file('wuselwars-test.keystore')
+            storePassword 'wuselwars'
+            keyAlias 'wuselwars'
+            keyPassword 'wuselwars'
+        }
+    }
+
+    buildTypes {
+        debug {
+            signingConfig signingConfigs.shared
+        }
+        release {
+            minifyEnabled false
+            signingConfig signingConfigs.shared
+        }
+    }
+
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_11
+        targetCompatibility JavaVersion.VERSION_11
+    }
+
+    lint {
+        checkReleaseBuilds false
+        abortOnError false
+    }
+}
