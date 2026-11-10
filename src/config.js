@@ -1,6 +1,6 @@
 // Shared gameplay constants (used by the simulation, the level generator and the renderer).
 export const HW = 4.6; // track half width
-export const UNIT_SPEED = 9.5;
+export const UNIT_SPEED = 11.5;
 export const UNIT_R = 0.3;
 export const PCAP = 1100; // hard cap of player units
 export const PSOFT = 800; // above this, clones merge into hp instead of new units
@@ -9,13 +9,18 @@ export const ECAP = 1600; // large enough for the carpets of the horde mode
 // enemy kinds
 export const EK = { GRUNT: 0, RUNNER: 1, PANZER: 2, BOMBER: 3, BRUTE: 4, BOSS: 5 };
 export const ENEMY = [
-  { name: 'grunt', hp: 1, speed: 3.1, r: 0.33, dmg: 1, cost: 1, lat: 0.9 },
-  { name: 'runner', hp: 1, speed: 6.2, r: 0.3, dmg: 1, cost: 1.6, lat: 2.4 },
-  { name: 'panzer', hp: 5, speed: 2.6, r: 0.42, dmg: 2, cost: 5, lat: 0.7 },
-  { name: 'bomber', hp: 2, speed: 3.6, r: 0.38, dmg: 2, cost: 4, lat: 1.2 },
-  { name: 'brute', hp: 14, speed: 1.9, r: 0.8, dmg: 3, cost: 13, lat: 0.5 },
-  { name: 'boss', hp: 500, speed: 0.62, r: 1.9, dmg: 999, cost: 0, lat: 0.35 },
+  { name: 'grunt', hp: 1, speed: 3.9, r: 0.33, dmg: 1, cost: 1, lat: 1.1 },
+  { name: 'runner', hp: 1, speed: 7.4, r: 0.3, dmg: 1, cost: 1.6, lat: 2.8 },
+  { name: 'panzer', hp: 5, speed: 3.2, r: 0.42, dmg: 2, cost: 5, lat: 0.9 },
+  { name: 'bomber', hp: 2, speed: 4.4, r: 0.38, dmg: 2, cost: 4, lat: 1.4 },
+  { name: 'brute', hp: 14, speed: 2.4, r: 0.8, dmg: 3, cost: 13, lat: 0.6 },
+  { name: 'boss', hp: 500, speed: 0.78, r: 1.9, dmg: 999, cost: 0, lat: 0.4 },
 ];
+
+// In the horde mode every Wusel ploughs through several grunts before it pops.
+export const HORDE_UNIT_HP = 3;
+// kill counts that trigger an announcer call-out
+export const MILESTONES = [50, 150, 300, 600, 1000, 1500, 2500, 4000];
 
 // gate operations
 export const OP = { MUL: 0, ADD: 1, SUB: 2, DIV: 3 };
@@ -30,7 +35,7 @@ export const EV = {
   BLOCK_HIT: 9, BLOCK_DOWN: 10, PICKUP: 11, FALL: 12, SHELL_FIRE: 13, SHELL_LAND: 14,
   GATE_DONE: 15, BOSS_STOMP: 16, BOSS_WARN: 17, COIN: 18, STAGE: 19, WIN: 20, LOSE: 21,
   EXPLO: 22, BOSS_DOWN: 23, CAGE_FREE: 24, FREEZE: 25, SAW_KILL: 26, MEGA_READY: 27,
-  WAVE: 28, BOSS_IN: 29,
+  WAVE: 28, BOSS_IN: 29, FRENZY: 30, FRENZY_END: 31, MILESTONE: 32,
 };
 
 export const STATE = { PLAY: 0, ADVANCE: 1, WON: 2, LOST: 3 };
@@ -53,10 +58,10 @@ export function playerStats(up) {
   const u = up || {};
   const rate = u.rate | 0, multi = u.multi | 0, mega = u.mega | 0, shield = u.shield | 0, coins = u.coins | 0;
   return {
-    fireRate: 4.6 + 0.42 * rate,
+    fireRate: 6 + 0.5 * rate,
     multiChance: 0.06 * multi,
     megaHp: 20 + 7 * mega,
-    megaShots: Math.max(16, 44 - 1.6 * mega),
+    megaShots: Math.max(16, 40 - 1.5 * mega),
     shield: 10 + 2 * shield,
     coinMul: 1 + 0.08 * coins,
   };

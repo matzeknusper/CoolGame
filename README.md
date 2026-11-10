@@ -19,6 +19,10 @@ Tore: **×N** vervielfacht jeden Wusel, **+N** verschenkt N Bonus-Wusels, **−N
 **÷N** dezimiert die Truppe. Ist die Mega-Leiste voll, ist der nächste Schuss ein Mega-Wusel.
 Gegner, die deine Linie erreichen, kosten Schild – bei 0 ist das Level verloren.
 
+Abschüsse füllen die **Rausch-Leiste**: Ist sie voll, feuerst du einige Sekunden lang doppelt so schnell.
+Knaller (Gegner mit Lunte) und Knallkugeln reißen ihre Umgebung mit – in der Horde gibt das Kettenreaktionen.
+Ein Mega-Wusel explodiert, wenn er fällt.
+
 ## Spielmodi
 
 - **Eroberung** – der Feldzug: Tore nutzen, Gegner abwehren und die Festung am Ende der Bahn stürmen. 6 Welten × 10 Level, jedes 10. ein Bosskampf.

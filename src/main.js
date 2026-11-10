@@ -48,6 +48,18 @@ let levelN = 1;
 let gameMode = 'campaign'; // 'campaign' (storm fortresses) | 'horde' (defeat the waves)
 let hintOn = false;
 let lastVib = 0;
+let slowT = 0; // seconds of slow motion left (finishers)
+
+function screenFlash(white) {
+  flashEl.classList.toggle('white', !!white);
+  flashEl.classList.add('on');
+  requestAnimationFrame(() => requestAnimationFrame(() => flashEl.classList.remove('on')));
+}
+
+function setFrenzy(on) {
+  document.body.classList.toggle('frenzy', on);
+  if (renderer) renderer.setFrenzy(on);
+}
 
 const input = { down: false, id: -1, startX: 0, lastX: 0, startLx: 0, target: 0, keyL: false, keyR: false, keyFire: false };
 
@@ -71,6 +83,7 @@ function musicFor(lv, m) {
 // ---- flow --------------------------------------------------------------------------------
 function startMenu() {
   mode = 'menu';
+  setFrenzy(false);
   gameMode = save.mode === 'horde' ? 'horde' : 'campaign';
   levelN = gameMode === 'horde' ? save.hbest : save.best;
   level = gameMode === 'horde' ? makeHordeLevel(levelN) : makeLevel(levelN);
@@ -93,6 +106,8 @@ function startLevel(n, gm = gameMode) {
   bot = AUTOBOT ? new Bot(sim, 0.85, 3) : null;
   renderer.buildLevel(level, sim);
   mode = 'play';
+  slowT = 0;
+  setFrenzy(false);
   endShown = false;
   endDelay = 0;
   input.down = false;
@@ -264,21 +279,20 @@ function processEvents(silent) {
       case EV.SHOT: audio.play('shot'); break;
       case EV.MEGA: audio.play('mega'); vib(25); break;
       case EV.POP_P: audio.play('pop'); break;
-      case EV.POP_E: audio.play(v >= EK.BRUTE ? 'bigPop' : 'popE'); break;
+      case EV.POP_E: audio.play(v >= EK.BRUTE ? 'bigPop' : 'popE', sim.combo); break;
       case EV.GATE: audio.play('gate'); break;
       case EV.FORT_HIT: audio.play('fortHit'); break;
-      case EV.FORT_DOWN: audio.play('fortDown'); vib([40, 40, 90]); ui.banner(t('stageClear'), 'good'); break;
+      case EV.FORT_DOWN: audio.play('fortDown'); vib([40, 40, 90]); ui.banner(t('stageClear'), 'good'); slowT = 0.8; screenFlash(true); break;
       case EV.SHIELD_HIT:
         audio.play('shield'); vib(35);
-        flashEl.classList.add('on');
-        requestAnimationFrame(() => requestAnimationFrame(() => flashEl.classList.remove('on')));
+        screenFlash(false);
         break;
       case EV.BLOCK_HIT: audio.play('blockHit'); break;
       case EV.BLOCK_DOWN: audio.play(sim.blockers[v | 0]?.type === BT.TNT ? 'explo' : 'gateDone'); break;
       case EV.PICKUP: audio.play('pickup'); ui.banner(t('pick')[v | 0], 'good'); vib(20); break;
       case EV.FALL: audio.play('fall'); break;
       case EV.SHELL_FIRE: audio.play('shell'); break;
-      case EV.SHELL_LAND: case EV.EXPLO: audio.play('explo'); break;
+      case EV.SHELL_LAND: case EV.EXPLO: audio.play('explo'); if (v >= 4.5) { screenFlash(true); vib(30); } break;
       case EV.GATE_DONE: audio.play('gateDone'); break;
       case EV.BOSS_WARN: audio.play('warn'); break;
       case EV.BOSS_STOMP: audio.play('stomp'); vib(60); break;
@@ -287,9 +301,12 @@ function processEvents(silent) {
         audio.play('stage');
         if (level.stages[sim.stage].boss) { ui.banner(`${t('bosses')[level.world]} ${t('bossIn')}`, 'bad'); musicFor(level, 'boss'); }
         break;
-      case EV.WIN: audio.play('win'); vib([30, 50, 30, 50, 120]); break;
-      case EV.LOSE: audio.play('lose'); audio.play('explo'); vib([120, 60, 200]); break;
-      case EV.BOSS_DOWN: audio.play('fortDown'); vib([60, 40, 140]); break;
+      case EV.WIN: audio.play('win'); vib([30, 50, 30, 50, 120]); slowT = Math.max(slowT, 0.7); setFrenzy(false); break;
+      case EV.FRENZY: audio.play('frenzy'); ui.banner(t('frenzy'), 'gold'); setFrenzy(true); vib([20, 30, 60]); break;
+      case EV.FRENZY_END: audio.play('frenzyEnd'); setFrenzy(false); break;
+      case EV.MILESTONE: audio.play('milestone', (v | 0) * 2); ui.banner(t('miles')[v | 0] || t('miles')[0], 'gold'); break;
+      case EV.LOSE: audio.play('lose'); audio.play('explo'); vib([120, 60, 200]); slowT = 0.6; setFrenzy(false); break;
+      case EV.BOSS_DOWN: audio.play('fortDown'); vib([60, 40, 140]); slowT = 1.0; screenFlash(true); break;
       case EV.CAGE_FREE: audio.play('cage'); break;
       case EV.FREEZE: audio.play('freeze'); break;
       case EV.SAW_KILL: audio.play('saw'); break;
@@ -316,7 +333,9 @@ function frame(ts) {
   requestAnimationFrame(frame);
   const raw = Math.min(100, ts - last);
   last = ts;
-  const dt = Math.min(0.05, raw / 1000);
+  let dt = Math.min(0.05, raw / 1000);
+  // finishers play in slow motion
+  if (slowT > 0) { slowT -= dt; if (mode === 'play') dt *= 0.3; }
   if (mode === 'boot') return;
   if (!NOADAPT) renderer.adapt(raw);
 

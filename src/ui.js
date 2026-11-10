@@ -51,6 +51,7 @@ export class UI {
           <div class="pill coin-pill">${I.coin}<span id="hud-coins">0</span></div>
         </div>
         <div class="bar enemy-bar"><div class="bar-fill" id="hud-fort"></div><div class="bar-text" id="hud-fort-text"></div></div>
+        <div id="hud-combo"><div class="combo-n"><span id="hud-combo-n"></span></div><div class="frenzy-bar"><i id="hud-frenzy"></i></div></div>
         <div id="hud-chips"></div>
         <div id="hud-hint" class="hidden"><div class="hand"></div><span></span></div>
         <div id="hud-banner"></div>
@@ -324,6 +325,19 @@ export class UI {
     this.set('hud-crowd', sim.pn, (n, v) => { n.textContent = v; });
     this.set('hud-coins', coins, (n, v) => { n.textContent = fmt(v); });
     this.set('hud-stages', horde ? sim.waveIdx - 1 + (sim.hw && sim.hw.boss ? 1 : 0) : sim.stage, (n, v) => { [...n.children].forEach((c, i) => { c.classList.toggle('done', i < v); c.classList.toggle('cur', i === v); }); });
+    // combo counter and frenzy gauge
+    const cb = sim.combo >= 8 ? sim.combo : 0;
+    this.set('hud-combo-n', cb, (n, v) => {
+      n.textContent = v ? '×' + v : '';
+      n.parentNode.style.setProperty('--s', String(1 + Math.min(0.9, v / 250)));
+      if (v) { n.classList.remove('bump'); void n.offsetWidth; n.classList.add('bump'); }
+    });
+    const fz = sim.frenzyT > 0 ? 100 + Math.ceil((sim.frenzyT / 5.5) * 20) : Math.round(sim.frenzy * 40);
+    this.set('hud-frenzy', fz, (n, v) => {
+      const on = v >= 100;
+      n.style.transform = `scaleX(${on ? (v - 100) / 20 : v / 40})`;
+      n.parentNode.parentNode.classList.toggle('on', on);
+    });
     const chips = (sim.rapidT > 0 ? 'r' + Math.ceil(sim.rapidT) : '') + (sim.freezeT > 0 ? 'f' + Math.ceil(sim.freezeT) : '');
     this.set('hud-chips', chips, (n) => {
       n.innerHTML = (sim.rapidT > 0 ? `<span class="chip rapid">${I.bolt}${Math.ceil(sim.rapidT)}s</span>` : '') + (sim.freezeT > 0 ? `<span class="chip freeze">❄ ${Math.ceil(sim.freezeT)}s</span>` : '');

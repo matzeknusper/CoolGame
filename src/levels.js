@@ -29,7 +29,7 @@ export function levelInfo(n) {
 
 // Fire power (units/s) the level is balanced around: assumes steady, moderate upgrading.
 export function expectedRate(n) {
-  const rate = 4.6 + 0.42 * Math.min(20, n * 0.3);
+  const rate = 6 + 0.5 * Math.min(20, n * 0.3);
   const multi = 1 + 0.06 * Math.min(15, n * 0.2);
   return rate * multi;
 }
@@ -314,7 +314,21 @@ export function makeLevel(n, H = 0, flowOverride = 0) {
     }
 
     // horde mode: a long open battlefield behind the gates, the horde pours in at its far end
-    const zFort = H ? z - rng.range(27, 31) : z - 5;
+    const zGatesEnd = z;
+    const zFort = H ? z - rng.range(31, 35) : z - 5;
+    if (H) {
+      // battlefield toys: mines for chain reactions and a few power-ups
+      const mines = 2 + (H > 3 ? 1 : 0) + (H > 12 ? 1 : 0);
+      for (let i = 0; i < mines; i++) {
+        const mz = zGatesEnd - 3 - ((i + rng()) / mines) * (zGatesEnd - zFort - 16);
+        L.blockers.push({ stage: si, z: mz, x: rng.pick([-3, -1.5, 0, 1.5, 3]), r: 0.95, type: BT.TNT, hp: 9, val: 0 });
+      }
+      const picks = 1 + (H > 2 ? 1 : 0);
+      for (let i = 0; i < picks; i++) {
+        const type = rng.weighted([[PT.RAPID, 3], [PT.FREEZE, 2], [PT.BOMB, 3], [PT.MEGA, 2]]);
+        L.pickups.push({ stage: si, z: z0 - 9 - i * 9 - rng() * 4, x: rng.range(-3.2, 3.2), type });
+      }
+    }
     const stage = { z0, zFort, boss: bossStage, hp: 0, spawn: null, M: 1, horde: null };
     L.stages.push(stage);
     z0 = zFort - 7;
@@ -339,7 +353,7 @@ export function makeLevel(n, H = 0, flowOverride = 0) {
     }
     st.M = M;
     const flow = rateExp * (1 + (M - 1) * 0.8);
-    const secs = ((n === 1 ? 9 : 17 + Math.min(26, n * 0.6)) * (st.boss ? 1.6 : 1) * (1 + cycle * 0.25)) / Math.sqrt(L.stages.length);
+    const secs = ((n === 1 ? 10 : 22 + Math.min(30, n * 0.7)) * (st.boss ? 1.6 : 1) * (1 + cycle * 0.25)) / Math.sqrt(L.stages.length);
     st.hp = Math.max(20, Math.round((flow * 0.7 * secs) / 10) * 10);
 
     // special squads arrive on their own timers; grunts fill the rest
@@ -357,7 +371,7 @@ export function makeLevel(n, H = 0, flowOverride = 0) {
     }
     // Pressure is tied to the raw fire rate: an un-multiplied stream can just about hold the
     // line, multipliers are what wins the level.
-    const pr = (0.44 + Math.min(0.46, hard * 0.01)) * (st.boss ? 0.6 : 1) * (n === 1 ? 0.7 : 1);
+    const pr = (0.8 + Math.min(0.7, hard * 0.014)) * (st.boss ? 0.6 : 1) * (n === 1 ? 0.7 : 1);
     st.spawn = {
       rate: rateExp * pr,
       burstEvery: Math.max(5.5, 9 - hard * 0.04),
@@ -375,35 +389,37 @@ export function makeLevel(n, H = 0, flowOverride = 0) {
       // is only a fallback.
       const measured = flowOverride || HORDE_FLOW[(H - 1) % HORDE_LEVELS];
       const out = measured || rateExp * (1 + (M - 1) * 0.8);
-      const perRow = 16, rowGap = 0.52;
-      const dens = perRow / rowGap;
-      // the horde arrives a little faster than it can be killed, so its front creeps forward
-      const P = HORDE_P + Math.min(0.25, hard * 0.004);
-      const arrive = P * out;
-      const hmul = Math.max(1, Math.ceil(arrive / (dens * 1.75))); // hp per grunt keeps the pace sane
-      const v = Math.max(0.8, arrive / (dens * hmul));
+      // The horde comes in storm waves: while a wave pours in it arrives HORDE_BURST times
+      // faster than it can be killed (its front surges towards the launcher), the pause after
+      // it is the time to push it back. On average slightly more arrives than can be killed.
+      const Pavg = HORDE_P + Math.min(0.2, hard * 0.003);
+      const v = 3.3 + Math.min(1.5, H * 0.05) + cycle * 0.3;
       const speedMul = v / ENEMY[EK.GRUNT].speed;
-      const secs = (34 + Math.min(16, H * 0.9)) * (1 + cycle * 0.2);
+      const perRow = 16;
+      const burst = HORDE_BURST * out;
+      const hmul = Math.max(1, Math.ceil(burst / (v * 31))); // hp per grunt keeps the head count sane
+      const rowGap = Math.max(0.5, Math.min(1.5, (perRow * v * hmul) / burst));
+      const secs = (30 + Math.min(14, H * 0.8)) * (1 + cycle * 0.2);
       const heads = Math.round((out * secs) / hmul);
-      // a wall of enemies already fills the far part of the field when the level starts
-      const prefill = Math.min(Math.floor((heads * 0.42) / perRow), Math.floor(HORDE_WALL / rowGap));
-      const W = Math.min(6, 3 + Math.floor((H - 1) / 6));
+      // the first wave already stands on the far part of the field when the level starts
+      const prefill = Math.floor(HORDE_WALL / rowGap);
+      const W = Math.min(8, 4 + Math.floor((H - 1) / 5));
       const waves = [];
       let wsum = 0;
-      for (let i = 0; i < W; i++) wsum += 1 + 0.25 * i + (i === W - 1 ? 0.4 : 0);
+      for (let i = 0; i < W; i++) wsum += 1 + 0.15 * i + (i === W - 1 ? 0.4 : 0);
       let total = 0;
       for (let i = 0; i < W; i++) {
         const last = i === W - 1;
-        // the first wave holds the wall
-        const share = (heads - prefill * perRow) * (1 + 0.25 * i + (last ? 0.4 : 0)) / wsum;
-        const count = Math.max(perRow * 2, Math.round(share + (i === 0 ? prefill * perRow : 0)));
+        const count = Math.max(perRow * 3, Math.round((heads * (1 + 0.15 * i + (last ? 0.4 : 0))) / wsum));
         const shield = f.panzer && i >= 1 ? Math.min(2, 1 + Math.floor(i / 3)) : 0;
         const brutes = f.brute ? Math.floor(i / 2) + (last ? 1 : 0) : 0;
-        waves.push({ count, shield, brutes });
+        // time this wave needs to pour in, and the breather after it
+        const dur = ((count / perRow) * rowGap) / v;
+        waves.push({ count, shield, brutes, pause: Math.max(1.5, dur * (HORDE_BURST / Pavg - 1)) });
         total += count * hmul + shield * perRow * 4 * hmul + brutes * st.spawn.bruteHp;
       }
       const bossHp = info.boss ? Math.round(out * 10) : 0;
-      st.horde = { waves, hmul, speedMul, perRow, rowGap, pause: 2.2, prefill, bossHp, total: total + bossHp };
+      st.horde = { waves, hmul, speedMul, perRow, rowGap, prefill, bossHp, bombers: H >= 2 ? 0.3 : 0, total: total + bossHp };
       st.hp = st.horde.total;
       st.spawn.specials = st.spawn.specials.filter((q) => q.kind === EK.RUNNER || q.kind === EK.BOMBER);
     }
@@ -436,7 +452,8 @@ function forceIntro(L, intro, before, rng, rateExp) {
 }
 
 // horde tuning (verified with tools/stats.mjs --horde)
-const HORDE_P = 1.15; // arrival rate relative to the measured kill rate
-const HORDE_WALL = 23; // depth (track units) of the wall of enemies at the start
+const HORDE_P = 1.05; // average arrival rate relative to the calibrated kill rate
+const HORDE_BURST = 2.3; // arrival rate while a wave pours in
+const HORDE_WALL = 12; // depth (track units) of the wall of enemies at the start
 
 export { ENEMY, UNIT_SPEED };

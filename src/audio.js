@@ -86,7 +86,7 @@ export class AudioSys {
     switch (name) {
       case 'shot': this.tone('sine', 420 + r * 120, 860 + r * 160, 0.07, 0.1); break;
       case 'pop': this.hiss(0.05, 0.1, 'bandpass', 1100 + r * 700, 500, 0, this.sfxBus, 1.5); break;
-      case 'popE': this.tone('sine', 300 + r * 80, 110, 0.08, 0.12); break;
+      case 'popE': { const k = 1 + Math.min(1, p / 60) * 0.9; this.tone('sine', (300 + r * 80) * k, 110 * k, 0.08, 0.12); break; }
       case 'bigPop': this.tone('sine', 220, 50, 0.3, 0.3); this.hiss(0.25, 0.2, 'lowpass', 1800, 200); break;
       case 'gate': {
         // rising pentatonic run – the more units pour through, the higher it climbs
@@ -124,6 +124,13 @@ export class AudioSys {
       case 'star': this.tone('triangle', midi(76 + p * 4), midi(76 + p * 4), 0.4, 0.2); this.tone('sine', midi(88 + p * 4), midi(88 + p * 4), 0.5, 0.1, 0.03); this.hiss(0.2, 0.06, 'highpass', 7000, 9000); break;
       case 'win': [0, 4, 7, 12, 7, 12, 16].forEach((s, i) => this.tone('square', midi(64 + s), midi(64 + s), i === 6 ? 0.6 : 0.16, 0.1, i * 0.13)); break;
       case 'lose': [0, -1, -3, -5, -8].forEach((s, i) => this.tone('sawtooth', midi(57 + s), midi(57 + s), i === 4 ? 0.7 : 0.22, 0.1, i * 0.2)); break;
+      case 'frenzy':
+        this.hiss(0.7, 0.25, 'bandpass', 400, 6000, 0, this.sfxBus, 1.5);
+        [0, 4, 7, 12, 16, 19, 24].forEach((s, i) => this.tone('sawtooth', midi(60 + s), midi(60 + s), 0.12, 0.07, i * 0.05));
+        this.tone('square', midi(84), midi(84), 0.5, 0.09, 0.36);
+        break;
+      case 'frenzyEnd': this.tone('triangle', 880, 330, 0.3, 0.08); break;
+      case 'milestone': [7, 12, 16].forEach((s, i) => this.tone('square', midi(72 + s + p), midi(72 + s + p), i === 2 ? 0.35 : 0.1, 0.1, i * 0.08)); this.hiss(0.25, 0.08, 'highpass', 6000, 9000, 0.16); break;
       case 'stage': [0, 7, 12].forEach((s, i) => this.tone('triangle', midi(69 + s), midi(69 + s), 0.2, 0.12, i * 0.09)); break;
     }
   }

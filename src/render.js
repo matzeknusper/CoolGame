@@ -4,7 +4,7 @@ import { HW, PCAP, ECAP, EK, ENEMY, OP, BT, EV, STATE } from './config.js';
 import { THEMES, ENEMY_COLORS } from './themes.js';
 import * as M from './models.js';
 import * as T from './textures.js';
-import { Particles, Rings, FloatTexts } from './fx.js';
+import { Particles, Rings, FloatTexts, Corpses, Flashes } from './fx.js';
 
 const TOY_VERT = /* glsl */ `
 attribute float mask;
@@ -172,6 +172,12 @@ export class Renderer {
     this.pAdd = new Particles(Math.round(900 * this.q.particles), true, this.dot);
     this.scene.add(this.pNorm.points, this.pAdd.points);
     this.rings = new Rings(this.scene);
+    this.flashes = new Flashes(this.scene, this.dot);
+    this.kick = 0; // camera punch (fov) on big hits
+    this.frenzy = 0; // 0..1 blend of the frenzy look
+    this.frenzyOn = false;
+    this.blast = { x: 0, z: 0, r: 0, t: -9 }; // last explosion: bodies fly away from it
+    this.corpseBudget = 0;
     this.texts = new FloatTexts(this.scene);
 
     this._creatures();
@@ -222,6 +228,7 @@ export class Renderer {
       this._inst(M.bruteGeo(true), 4, this.enemyMat, true),
     ];
     this.enemyCol = ENEMY_COLORS.map((h) => new THREE.Color(h));
+    this.corpses = new Corpses(this.scene, this.lod.grunt[0], this.enemyMat, 300);
     if (this.q.shadows) {
       const g = new THREE.PlaneGeometry(1, 1);
       g.rotateX(-Math.PI / 2);
@@ -246,7 +253,8 @@ export class Renderer {
     this.cam.aspect = w / h;
     // portrait screens need the camera further back so the whole track width stays visible
     const a = w / h;
-    this.cam.fov = a < 1 ? 60 : 50;
+    this.baseFov = a < 1 ? 60 : 50;
+    this.cam.fov = this.baseFov;
     this.camBack = a < 0.75 ? Math.min(1.75, 0.62 / a + 0.25) : a < 1 ? 1.05 : 1.3;
     this.camAhead = a < 1 ? 9.5 : 6.5;
     this.cam.updateProjectionMatrix();
@@ -276,7 +284,9 @@ export class Renderer {
     if (this._crateMat) { this._crateMat.map.dispose(); this._crateMat.dispose(); this._crateMat = null; }
     if (this.levelGroup.userData.turretGeo) this.levelGroup.userData.turretGeo.dispose();
     this.levelGroup = null;
-    this.rings.clear(); this.texts.clear();
+    this.rings.clear(); this.texts.clear(); this.flashes.clear();
+    if (this.corpses) this.corpses.clear();
+    this.setFrenzy(false); this.frenzy = 0; this.kick = 0;
     this.pNorm.n = 0; this.pAdd.n = 0;
   }
 
@@ -511,7 +521,7 @@ export class Renderer {
       grp.add(label);
       grp.position.set(g.cx, 0, g.z);
       G.add(grp);
-      return { grp, film, label, dyn, g, shown: -1, gone: 0 };
+      return { grp, film, label, dyn, g, shown: -1, gone: 0, acc: 0, accT: 0 };
     });
 
     // forts
@@ -643,13 +653,25 @@ export class Renderer {
   // ---- per-frame sync ---------------------------------------------------------------------
   update(sim, dt, menu = false) {
     this.time += dt;
-    this.fxBudget = 46;
+    this.fxBudget = 60;
+    this.corpseBudget = 14;
     const t = this.time;
     this._syncUnits(sim, t);
     this._syncObjects(sim, dt, t);
     this._camera(sim, dt, menu);
     this._ambient(dt);
     this.pNorm.update(dt); this.pAdd.update(dt);
+    this.corpses.update(dt); this.flashes.update(dt);
+    // frenzy look: golden Wusels
+    this.frenzy += ((this.frenzyOn ? 1 : 0) - this.frenzy) * Math.min(1, dt * 6);
+    if (this.frenzy > 0.01) {
+      const k = this.frenzy * (0.75 + 0.25 * Math.sin(t * 18));
+      this.playerMat.uniforms.uTint.value.copy(this.skinColor).lerp(_c.set(0xffd23a), k);
+      this.playerMat.uniforms.uFlash.value = k * 0.18;
+    } else if (this.playerMat.uniforms.uFlash.value !== 0) {
+      this.playerMat.uniforms.uTint.value.copy(this.skinColor);
+      this.playerMat.uniforms.uFlash.value = 0;
+    }
     this.rings.update(dt); this.texts.update(dt);
     if (this.groundFlow) { this.groundTex.offset.x += this.groundFlow * dt; this.groundTex.offset.y += this.groundFlow * 0.6 * dt; }
     if (sim.state === STATE.WON) {
@@ -776,6 +798,12 @@ export class Renderer {
       u.uFlash.value = Math.max(0, g.flash * 4);
       const pulse = 1 + Math.max(0, g.flash) * 0.5;
       o.label.scale.setScalar(pulse);
+      // running tally of the Wusels a gate has produced
+      o.accT += dt;
+      if (o.acc >= 5 && o.accT > 0.5) {
+        this.texts.add(g.cx, 3.3, g.z, '+' + o.acc, g.op === OP.ADD ? '#ffe45c' : '#8dffcf', 1.25 + Math.min(0.9, o.acc / 120), 0.75);
+        o.acc = 0; o.accT = 0;
+      }
       if (o.dyn && o.shown !== g.pool) { o.shown = g.pool; o.dyn.set(GATE_SIGN[g.op] + Math.ceil(g.pool)); }
     }
     for (const o of this.fortObjs) {
@@ -873,9 +901,15 @@ export class Renderer {
       this.shake *= Math.max(0, 1 - dt * 7);
     }
     this.cam.lookAt(this.camLook);
+    // fov punch
+    const fov = this.baseFov + this.kick * 5 + this.frenzy * 2.5;
+    if (Math.abs(fov - this.cam.fov) > 0.02) { this.cam.fov = fov; this.cam.updateProjectionMatrix(); }
+    this.kick *= Math.max(0, 1 - dt * 6);
     this.sky.position.copy(this.cam.position);
     if (this.stars) this.stars.position.copy(this.cam.position);
   }
+
+  setFrenzy(on) { this.frenzyOn = !!on; }
 
   snapCamera() { this.intro = 0; this.snap = true; }
 
@@ -905,10 +939,14 @@ export class Renderer {
     switch (type) {
       case EV.SHOT:
         this.launcher.recoil = 1;
-        if (this.fxBudget-- > 0) A.spawn(x, 1.5, z - 0.4, (Math.random() - 0.5) * 2, 1.5, -3, 0xffffff, 0.5, 0.22, 0, 3);
+        if (this.fxBudget-- > 0) {
+          A.spawn(x, 1.5, z - 0.4, (Math.random() - 0.5) * 2, 1.5, -3, 0xffffff, 0.5, 0.22, 0, 3);
+          A.spawn(x, 1.45, z - 0.5, 0, 0, -1, this.frenzyOn ? 0xffd23a : skin, 1.0, 0.09, 0, 0);
+        }
         break;
       case EV.MEGA:
-        this.launcher.recoil = 1.6; this.shake = Math.max(this.shake, 0.35);
+        this.launcher.recoil = 1.6; this.shake = Math.max(this.shake, 0.35); this.kick = Math.max(this.kick, 0.6);
+        this.flashes.add(x, 1.5, z - 1, 5, 0xffd23a, 0.25);
         A.burst(x, 1.4, z - 0.5, 16, 0xffd23a, 6, 0.7, 0.5, 0.6, 2);
         this.rings.add(x, z, 0.4, 3, 0.45, 0xffd23a);
         break;
@@ -917,21 +955,47 @@ export class Renderer {
         break;
       case EV.POP_E: {
         const big = v >= EK.BRUTE;
+        if (!big && this.corpseBudget > 0 && this.corpses.n < this.corpses.cap) {
+          this.corpseBudget--;
+          const c = this.enemyCol[v];
+          const b = this.blast;
+          let vx, vy, vz;
+          const dx = x - b.x, dz = z - b.z;
+          const d = Math.hypot(dx, dz);
+          if (this.time - b.t < 0.12 && d < b.r + 1.5) {
+            // thrown outwards by the explosion
+            const f = (7 + Math.random() * 7) / Math.max(0.4, d);
+            vx = dx * f; vz = dz * f; vy = 9 + Math.random() * 9;
+          } else {
+            vx = (Math.random() - 0.5) * 7; vz = -(3 + Math.random() * 8); vy = 6 + Math.random() * 7;
+          }
+          this.corpses.spawn(x, 0.3, z, vx, vy, vz, c.r, c.g, c.b, v === EK.PANZER ? 1.25 : 1);
+          if (this.fxBudget-- > 0) A.spawn(x, 0.6, z, 0, 0, 0, 0xffffff, 0.8, 0.1, 0, 0);
+        }
         if (big || this.fxBudget > 0) {
           this.fxBudget -= 3;
           P.burst(x, 0.4, z, big ? 26 : 3, v === 0 ? this.gruntHex : ENEMY_COLORS[v], big ? 8 : 3.6, big ? 0.8 : 0.38, big ? 0.9 : 0.5);
-          if (big) { this.shake = Math.max(this.shake, v === EK.BOSS ? 1.2 : 0.3); this.rings.add(x, z, 0.5, v === EK.BOSS ? 9 : 3, 0.5, 0xc98aff); }
+          if (big) {
+            this.shake = Math.max(this.shake, v === EK.BOSS ? 1.2 : 0.4); this.kick = Math.max(this.kick, v === EK.BOSS ? 1 : 0.4);
+            this.rings.add(x, z, 0.5, v === EK.BOSS ? 9 : 3.5, 0.5, 0xc98aff);
+            this.flashes.add(x, 1.2, z, v === EK.BOSS ? 16 : 6, 0xe0b0ff, 0.3);
+          }
         }
         break;
       }
       case EV.GATE:
+        for (const o of this.gateObjs) {
+          const g = o.g;
+          if (Math.abs(g.z - z) < 1.3 && Math.abs(g.cx - x) < g.w + 0.6) { o.acc += v | 0; break; }
+        }
         if (this.fxBudget-- > 0) A.spawn(x + (Math.random() - 0.5) * 0.6, 0.6 + Math.random() * 1.4, z, (Math.random() - 0.5) * 2, 2.5, -2, 0xffffff, 0.34, 0.35, -2, 1);
         break;
       case EV.FORT_HIT:
         if (this.fxBudget-- > 0) P.spawn(x, 0.8 + Math.random(), z + 0.3, (Math.random() - 0.5) * 4, 3 + Math.random() * 3, 2 + Math.random() * 3, this.theme.fortA, 0.42, 0.6);
         break;
       case EV.FORT_DOWN: {
-        this.shake = 1.4;
+        this.shake = 1.6; this.kick = 1;
+        this.flashes.add(0, 2.5, z, 26, 0xffe9a0, 0.45);
         const th = this.theme;
         for (let i = 0; i < 12; i++) {
           const ex = (Math.random() - 0.5) * 9;
@@ -969,11 +1033,19 @@ export class Renderer {
       case EV.EXPLO:
       case EV.SHELL_LAND: {
         const r = v;
-        this.shake = Math.max(this.shake, Math.min(1.2, 0.25 + r * 0.1));
-        A.burst(x, 0.6, z, Math.round(14 + r * 4), 0xff8a2a, 5 + r * 1.6, 1.0 + r * 0.12, 0.6, 1, 3);
-        A.burst(x, 0.6, z, 10, 0xfff1a0, 4 + r, 1.3, 0.35, 1, 0);
-        P.burst(x, 0.6, z, 12, 0x4a4048, 4 + r, 1.0, 1.0, 1.4, 4);
+        this.blast.x = x; this.blast.z = z; this.blast.r = r; this.blast.t = this.time;
+        this.corpseBudget += Math.round(10 + r * 5);
+        this.shake = Math.max(this.shake, Math.min(1.5, 0.35 + r * 0.13));
+        this.kick = Math.max(this.kick, Math.min(1, 0.25 + r * 0.09));
+        this.flashes.add(x, 1, z, r * 3.2, 0xffe2a0, 0.3);
+        this.flashes.add(x, 1, z, r * 1.6, 0xffffff, 0.14);
+        A.burst(x, 0.6, z, Math.round(18 + r * 5), 0xff8a2a, 6 + r * 1.9, 1.1 + r * 0.14, 0.65, 1, 3);
+        A.burst(x, 0.6, z, 12, 0xfff1a0, 5 + r, 1.4, 0.35, 1, 0);
+        P.burst(x, 0.6, z, 14, 0x4a4048, 4 + r, 1.1, 1.0, 1.4, 4);
+        // smoke column
+        for (let i = 0; i < 7; i++) P.spawn(x + (Math.random() - 0.5) * r * 0.5, 0.6, z + (Math.random() - 0.5) * r * 0.5, (Math.random() - 0.5) * 1.5, 2.5 + Math.random() * 2.5, (Math.random() - 0.5) * 1.5, 0x5a5058, 1.5 + Math.random(), 1.1, -1.2, 0.8);
         this.rings.add(x, z, 0.4, r, 0.45, 0xffc36a);
+        this.rings.add(x, z, 0.2, r * 1.35, 0.6, 0xffffff);
         break;
       }
       case EV.SHELL_FIRE:

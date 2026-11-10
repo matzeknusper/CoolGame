@@ -195,4 +195,95 @@ export class FloatTexts {
   clear() { for (const it of this.items) it.s.visible = false; }
 }
 
+const _m4 = new THREE.Matrix4();
+const _q = new THREE.Quaternion();
+const _ax = new THREE.Vector3();
+const _pos = new THREE.Vector3();
+const _scl = new THREE.Vector3();
+
+// Defeated enemies are flung through the air as tumbling bodies (one instanced draw call).
+export class Corpses {
+  constructor(scene, geo, mat, cap = 300) {
+    this.cap = cap;
+    this.n = 0;
+    this.d = new Float32Array(cap * 12); // x y z vx vy vz ax az angle spin life scale
+    const m = (this.mesh = new THREE.InstancedMesh(geo, mat, cap));
+    m.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
+    m.instanceColor = new THREE.InstancedBufferAttribute(new Float32Array(cap * 3).fill(1), 3);
+    m.instanceColor.setUsage(THREE.DynamicDrawUsage);
+    m.frustumCulled = false;
+    m.count = 0;
+    scene.add(m);
+  }
+  spawn(x, y, z, vx, vy, vz, r, g, b, scale = 1) {
+    if (this.n >= this.cap) return;
+    const i = this.n++, o = i * 12, d = this.d;
+    d[o] = x; d[o + 1] = y; d[o + 2] = z; d[o + 3] = vx; d[o + 4] = vy; d[o + 5] = vz;
+    const a = Math.random() * 6.283;
+    d[o + 6] = Math.cos(a); d[o + 7] = Math.sin(a); d[o + 8] = 0; d[o + 9] = (8 + Math.random() * 12) * (Math.random() < 0.5 ? -1 : 1);
+    d[o + 10] = 0.75 + Math.random() * 0.35; d[o + 11] = scale;
+    const c = this.mesh.instanceColor.array;
+    c[i * 3] = r; c[i * 3 + 1] = g; c[i * 3 + 2] = b;
+  }
+  update(dt) {
+    const d = this.d, c = this.mesh.instanceColor.array, arr = this.mesh.instanceMatrix.array;
+    for (let i = this.n - 1; i >= 0; i--) {
+      const o = i * 12;
+      d[o + 10] -= dt;
+      if (d[o + 10] <= 0) {
+        const l = --this.n;
+        if (i !== l) {
+          for (let k = 0; k < 12; k++) d[o + k] = d[l * 12 + k];
+          c[i * 3] = c[l * 3]; c[i * 3 + 1] = c[l * 3 + 1]; c[i * 3 + 2] = c[l * 3 + 2];
+        } else continue;
+      }
+      d[o + 4] -= 26 * dt;
+      d[o] += d[o + 3] * dt; d[o + 1] += d[o + 4] * dt; d[o + 2] += d[o + 5] * dt;
+      d[o + 8] += d[o + 9] * dt;
+    }
+    for (let i = 0; i < this.n; i++) {
+      const o = i * 12;
+      const life = d[o + 10];
+      const s = d[o + 11] * (life < 0.25 ? life / 0.25 : 1);
+      _q.setFromAxisAngle(_ax.set(d[o + 6], 0, d[o + 7]), d[o + 8]);
+      _m4.compose(_pos.set(d[o], Math.max(0.1, d[o + 1]), d[o + 2]), _q, _scl.set(s, s, s));
+      _m4.toArray(arr, i * 16);
+    }
+    this.mesh.count = this.n;
+    if (this.n) { this.mesh.instanceMatrix.needsUpdate = true; this.mesh.instanceColor.needsUpdate = true; }
+  }
+  clear() { this.n = 0; this.mesh.count = 0; }
+}
+
+// Big soft light bursts for explosions.
+export class Flashes {
+  constructor(scene, map, count = 8) {
+    this.items = [];
+    for (let i = 0; i < count; i++) {
+      const s = new THREE.Sprite(new THREE.SpriteMaterial({ map, transparent: true, depthWrite: false, blending: THREE.AdditiveBlending, fog: false }));
+      s.visible = false; s.renderOrder = 13;
+      scene.add(s);
+      this.items.push({ s, t: 0, dur: 0, size: 1 });
+    }
+  }
+  add(x, y, z, size, color, dur = 0.28) {
+    const it = this.items.find((i) => !i.s.visible) || this.items[0];
+    it.s.visible = true; it.s.position.set(x, y, z);
+    it.s.material.color.set(color);
+    it.t = 0; it.dur = dur; it.size = size;
+  }
+  update(dt) {
+    for (const it of this.items) {
+      if (!it.s.visible) continue;
+      it.t += dt;
+      const k = it.t / it.dur;
+      if (k >= 1) { it.s.visible = false; continue; }
+      const sc = it.size * (0.6 + k * 0.9);
+      it.s.scale.set(sc, sc, 1);
+      it.s.material.opacity = (1 - k) * (1 - k);
+    }
+  }
+  clear() { for (const it of this.items) it.s.visible = false; }
+}
+
 export { softDot };

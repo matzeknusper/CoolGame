@@ -15,7 +15,7 @@ export function expectedUpgrades(n) {
 }
 
 const SEEDS = 5;
-const FACTORS = [1.15, 1.0, 0.88, 0.76, 0.66, 0.56, 0.47, 0.39, 0.32, 0.26];
+const FACTORS = [1.3, 1.15, 1.0, 0.88, 0.76, 0.66, 0.56, 0.47, 0.39, 0.32, 0.26, 0.2];
 const MARGIN = 0.85;
 const dt = 1 / 60;
 

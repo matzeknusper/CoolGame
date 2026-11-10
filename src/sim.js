@@ -2,7 +2,7 @@
 // (tools/balance.mjs uses it with a bot to verify that every level is winnable).
 import { makeRng } from './rng.js';
 import {
-  HW, UNIT_SPEED, UNIT_R, PCAP, PSOFT, ECAP, EK, ENEMY, OP, BT, PT, EV, STATE, playerStats,
+  HW, UNIT_SPEED, UNIT_R, PCAP, PSOFT, ECAP, EK, ENEMY, OP, BT, PT, EV, STATE, playerStats, HORDE_UNIT_HP, MILESTONES,
 } from './config.js';
 import { laneValue } from './levels.js';
 
@@ -17,6 +17,9 @@ export class Sim {
     this.sandbox = !!opts.sandbox; // no enemies: used to measure the crowd's throughput
     this.throughput = 0; // hp of units that ran off the far end (boss / horde stages)
     this.stats = playerStats(upgrades);
+    // horde mode: tougher Wusels (each one takes several grunts with it)
+    this.unitHp = level.mode === 'horde' ? HORDE_UNIT_HP : 1;
+    this.stats.megaHp *= this.unitHp;
     this.rng = makeRng(seed * 9973 + level.n * 31);
 
     // player units (struct of arrays)
@@ -107,6 +110,15 @@ export class Sim {
     this.waveIdx = 0;
     this.waveCount = 0;
 
+    this.dmgMul = 1; // explosion damage scale (tougher horde grunts)
+    // combo + frenzy ("Rausch"): kills fill a gauge, a full gauge doubles the fire rate for a while
+    this.combo = 0;
+    this.comboT = 0;
+    this.frenzy = 0;
+    this.frenzyT = 0;
+    this.frenzyNeed = 60;
+    this.milestone = 0;
+
     this.kills = 0;
     this.coins = 0;
     this.coinAcc = 0;
@@ -143,6 +155,8 @@ export class Sim {
     this.burstN = 0;
     this.specT = st.spawn.specials.map((s) => s.first);
     this.speedMul = st.horde ? st.horde.speedMul : 1;
+    this.dmgMul = st.horde ? st.horde.hmul : 1;
+    this.frenzyNeed = st.horde ? Math.max(60, st.horde.waves.reduce((a, w) => a + w.count, 0) / 4.5) : 24 + st.spawn.rate * 16;
     this.hw = null;
     if (st.horde) {
       const h = st.horde;
@@ -189,8 +203,8 @@ export class Sim {
       return;
     }
     const jitter = (this.rng() - 0.5) * 0.5;
-    this.spawnUnit(this.lx + jitter, this.lz - 1.2, 1, 0, pg);
-    if (this.rng() < s.multiChance) this.spawnUnit(this.lx - jitter * 1.5, this.lz - 0.9, 1, 0, pg);
+    this.spawnUnit(this.lx + jitter, this.lz - 1.2, this.unitHp, 0, pg);
+    if (this.rng() < s.multiChance) this.spawnUnit(this.lx - jitter * 1.5, this.lz - 0.9, this.unitHp, 0, pg);
     this.emit(EV.SHOT, this.lx, this.lz - 1.2, 0);
     this.megaCharge += 1 / s.megaShots;
     if (this.megaCharge >= 1) {
@@ -226,6 +240,11 @@ export class Sim {
     if (this.rapidT > 0) this.rapidT -= dt;
     if (this.freezeT > 0) this.freezeT -= dt;
     if (this.shieldFlash > 0) this.shieldFlash -= dt;
+    if (this.comboT > 0) { this.comboT -= dt; if (this.comboT <= 0) this.combo = 0; }
+    if (this.frenzyT > 0) {
+      this.frenzyT -= dt;
+      if (this.frenzyT <= 0) this.emit(EV.FRENZY_END, this.lx, this.lz, 0);
+    }
 
     // launcher
     if (this.state === STATE.ADVANCE) {
@@ -249,7 +268,7 @@ export class Sim {
 
     if (playing && this.firing) {
       this.cool -= dt;
-      const rate = this.stats.fireRate * (this.rapidT > 0 ? 2 : 1);
+      const rate = this.stats.fireRate * Math.min(3, (this.rapidT > 0 ? 2 : 1) * (this.frenzyT > 0 ? 2 : 1));
       let guard = 0;
       while (this.cool <= 0 && guard++ < 6) {
         this.fire();
@@ -359,11 +378,13 @@ export class Sim {
     const kind = armored ? EK.PANZER : EK.GRUNT;
     const hp = (armored ? 5 : 1) * h.hmul;
     const span = 2 * HW - 1.0;
+    // now and then a bomber marches in the row: shoot it for a chain reaction
+    const bomber = !armored && h.bombers > 0 && this.rng() < h.bombers ? Math.floor(this.rng() * n) : -1;
     for (let k = 0; k < n; k++) {
       const slot = n === h.perRow ? k : Math.floor(this.rng() * h.perRow);
       // a little disorder makes the carpet look like a crowd instead of a grid
       const x = -HW + 0.5 + ((slot + 0.5) / h.perRow) * span + (this.rng() - 0.5) * 0.3;
-      const i = this.spawnEnemy(kind, x, z + (this.rng() - 0.5) * 0.4, hp);
+      const i = k === bomber ? this.spawnEnemy(EK.BOMBER, x, z + (this.rng() - 0.5) * 0.4, 2 * h.hmul) : this.spawnEnemy(kind, x, z + (this.rng() - 0.5) * 0.4, hp);
       if (i >= 0) this.eoff[i] = x;
     }
     w.pend -= n;
@@ -386,7 +407,7 @@ export class Sim {
       w.pend += wave.count;
       w.pendBrutes += wave.brutes;
       w.shield = wave.shield;
-      w.timer = h.pause;
+      w.timer = wave.pause;
       w.rowT = 0;
       w.future -= wave.count * h.hmul + wave.shield * h.perRow * 4 * h.hmul + wave.brutes * sp.bruteHp;
       this.emit(EV.WAVE, 0, sz, w.idx);
@@ -494,9 +515,30 @@ export class Sim {
       const x = this.ex[i], z = this.ez[i];
       this.emit(EV.POP_E, x, z, kind);
       this.addCoins(0.12 + this.emax[i] * 0.05, x, z);
+      // combo, frenzy gauge and announcer milestones
+      this.combo++;
+      this.comboT = 1.5;
+      if (this.frenzyT <= 0 && this.state === STATE.PLAY) {
+        this.frenzy += (kind >= EK.BRUTE ? 6 : kind === EK.GRUNT ? 1 : 2) / this.frenzyNeed;
+        if (this.frenzy >= 1) {
+          this.frenzy = 0;
+          this.frenzyT = 5.5;
+          this.emit(EV.FRENZY, this.lx, this.lz, 0);
+        }
+      }
+      if (this.milestone < MILESTONES.length && this.kills >= MILESTONES[this.milestone]) {
+        this.emit(EV.MILESTONE, x, z, this.milestone);
+        this.milestone++;
+      }
       if (kind === EK.BOMBER) {
-        this.emit(EV.EXPLO, x, z, 1.7);
-        this._blast(x, z, 1.7, 6, 0, true);
+        if (this.hw) {
+          // inside a horde a bomber tears its neighbours apart: chain reactions!
+          this.emit(EV.EXPLO, x, z, 2.6);
+          this._blast(x, z, 2.6, 0, 3 * this.dmgMul, false);
+        } else {
+          this.emit(EV.EXPLO, x, z, 1.7);
+          this._blast(x, z, 1.7, 6, 0, true);
+        }
       } else if (kind === EK.BOSS) {
         this.bossAlive = false;
         this.emit(EV.BOSS_DOWN, x, z, 0);
@@ -504,6 +546,12 @@ export class Sim {
         this._stageCleared(x, z);
       }
     }
+  }
+
+  // a Mega Wusel goes out with a bang
+  _megaBoom(x, z) {
+    this.emit(EV.EXPLO, x, z, 3.4);
+    this._blast(x, z, 3.4, 0, 4 * this.dmgMul, false);
   }
 
   _killUnit(i, ev) {
@@ -702,7 +750,7 @@ export class Sim {
   }
 
   _clone(i, extra, w, cx, gi, single) {
-    const hp = single ? 1 : this.php[i];
+    const hp = single ? this.unitHp : this.php[i];
     const x = this.px[i], z = this.pz[i];
     for (let k = 0; k < extra; k++) {
       if (this.pn >= PSOFT) {
@@ -733,7 +781,7 @@ export class Sim {
       this.emit(EV.CAGE_FREE, bl.x, bl.z, bl.val);
     } else if (bl.type === BT.TNT) {
       this.emit(EV.EXPLO, bl.x, bl.z, 5);
-      this._blast(bl.x, bl.z, 5, 0, 12, false);
+      this._blast(bl.x, bl.z, 5, 0, 12 * this.dmgMul, false);
     }
   }
 
@@ -743,7 +791,7 @@ export class Sim {
     switch (pk.type) {
       case PT.RAPID: this.rapidT = 6; break;
       case PT.FREEZE: this.freezeT = 4.5; this.emit(EV.FREEZE, pk.x, pk.z, 0); break;
-      case PT.BOMB: this.emit(EV.EXPLO, pk.x, pk.z, 9); this._blast(pk.x, pk.z, 9, 0, 14, false); break;
+      case PT.BOMB: this.emit(EV.EXPLO, pk.x, pk.z, 9); this._blast(pk.x, pk.z, 9, 0, 14 * this.dmgMul, false); break;
       case PT.MEGA:
         if (!this.megaReady) { this.megaCharge = 1; this.megaReady = true; this.emit(EV.MEGA_READY, this.lx, this.lz, 0); }
         break;
@@ -787,7 +835,7 @@ export class Sim {
       // far away the horde is a wide front, close to the launcher it converges on it
       const near = lz - z < nearDist;
       let tx = near ? lx + this.eoff[i] * nearK : lx * farK + this.eoff[i];
-      let lat = near ? def.lat + 1.6 : def.lat;
+      let lat = near ? def.lat + (hordeMode ? 3.4 : 1.6) : def.lat;
       if (kind === EK.RUNNER) tx += Math.sin(this.eph[i] * 0.35) * (near ? 1.0 : 2.2);
       else if (kind === EK.BRUTE) tx = lx * 0.7 + this.eoff[i] * 0.3;
       // avoid holes ahead
@@ -939,7 +987,7 @@ export class Sim {
           if (this.ekind[e] === EK.BOSS) this.emit(EV.FORT_HIT, x, z, d);
         }
       }
-      if (php[i] <= 0) { this.emit(EV.POP_P, x, z, mega ? 1 : 0); continue; }
+      if (php[i] <= 0) { this.emit(EV.POP_P, x, z, mega ? 1 : 0); if (mega) this._megaBoom(x, z); continue; }
       const cx = (x + 6) | 0, cz = ((z - gz0) / CELL) | 0;
       const x0 = cx > 0 ? cx - 1 : 0, x1 = cx < GX - 1 ? cx + 1 : GX - 1;
       const z0 = cz > 0 ? cz - 1 : 0, z1 = cz < gnz - 1 ? cz + 1 : gnz - 1;
@@ -955,7 +1003,7 @@ export class Sim {
                 const d = Math.min(php[i], ehp[e]);
                 php[i] -= d;
                 this._hurtEnemy(e, d);
-                if (php[i] <= 0) { this.emit(EV.POP_P, x, z, mega ? 1 : 0); break outer; }
+                if (php[i] <= 0) { this.emit(EV.POP_P, x, z, mega ? 1 : 0); if (mega) this._megaBoom(x, z); break outer; }
               }
             }
             e = next[e];
