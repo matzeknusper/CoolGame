@@ -207,14 +207,16 @@ export class Renderer {
 
   _creatures() {
     const detail = this.qualityName === 'low' ? 0 : 1;
+    // two levels of detail: the horde mode shows far more creatures at once
+    this.lod = { wusel: [M.wuselGeo(0), M.wuselGeo(detail)], grunt: [M.gruntGeo(0), M.gruntGeo(detail)] };
     this.playerMat = this.toyMat(0x35e0a1);
-    this.playerMesh = this._inst(M.wuselGeo(detail), PCAP, this.playerMat, false);
+    this.playerMesh = this._inst(this.lod.wusel[1], PCAP, this.playerMat, false);
     this.megaMesh = this._inst(M.megaGeo(), 40, this.playerMat, false);
     this.enemyMat = this.toyMat(0xffffff);
     this.enemyMeshes = [
-      this._inst(M.gruntGeo(detail), ECAP, this.enemyMat, true),
+      this._inst(this.lod.grunt[1], ECAP, this.enemyMat, true),
       this._inst(M.runnerGeo(), 96, this.enemyMat, true),
-      this._inst(M.panzerGeo(), 96, this.enemyMat, true),
+      this._inst(M.panzerGeo(), 240, this.enemyMat, true),
       this._inst(M.bomberGeo(), 64, this.enemyMat, true),
       this._inst(M.bruteGeo(false), 64, this.enemyMat, true),
       this._inst(M.bruteGeo(true), 4, this.enemyMat, true),
@@ -301,6 +303,13 @@ export class Renderer {
     su.uTop.value.set(th.skyTop); su.uMid.value.set(th.skyMid); su.uBot.value.set(th.skyBot); su.uSun.value.set(th.sun);
     su.uSunDir.value.set(th.sunDir[0], th.sunDir[1] * 0.6, -Math.abs(th.sunDir[2]) - 0.6).normalize();
     this.r.setClearColor(th.fog);
+
+    const lite = level.mode === 'horde' && this.qualityName !== 'high' ? 0 : 1;
+    this.playerMesh.geometry = this.lod.wusel[lite];
+    this.enemyMeshes[0].geometry = this.lod.grunt[lite];
+
+    this.enemyCol[0].set(th.enemy || ENEMY_COLORS[0]);
+    this.gruntHex = th.enemy || ENEMY_COLORS[0];
 
     this._buildTrack(level, th, G);
     this._buildScenery(level, th, G);
@@ -511,7 +520,7 @@ export class Renderer {
       const grp = new THREE.Group();
       grp.position.set(0, 0, f.z);
       let mesh, ruin = null, label = null;
-      if (st.boss) {
+      if (f.boss) {
         mesh = new THREE.Mesh(M.bossGateGeo(th), this.toy);
         mesh.position.z = -1.5;
       } else {
@@ -527,7 +536,7 @@ export class Renderer {
       }
       grp.add(mesh);
       G.add(grp);
-      return { grp, mesh, ruin, label, f, shown: -1, shakeT: 0, boss: st.boss };
+      return { grp, mesh, ruin, label, f, shown: -1, shakeT: 0, boss: f.boss };
     });
 
     // blockers
@@ -709,7 +718,8 @@ export class Renderer {
       const ph = sim.eph[i];
       let y = Math.abs(Math.sin(ph)) * 0.14;
       const sq = Math.sin(ph * 2) * 0.08;
-      let base = kind === EK.BRUTE ? 2.3 : kind === EK.BOSS ? 5.4 : 1;
+      // tougher horde grunts are visibly bigger
+      let base = kind === EK.BRUTE ? 2.3 : kind === EK.BOSS ? 5.4 : kind === EK.GRUNT && sim.emax[i] > 1 ? 1 + Math.min(0.45, (sim.emax[i] - 1) * 0.14) : 1;
       if (kind === EK.BOMBER) base *= 1 + Math.sin(t * 9 + i) * 0.07;
       if (kind === EK.BOSS) {
         y = Math.abs(Math.sin(ph)) * 0.35;
@@ -909,7 +919,7 @@ export class Renderer {
         const big = v >= EK.BRUTE;
         if (big || this.fxBudget > 0) {
           this.fxBudget -= 3;
-          P.burst(x, 0.4, z, big ? 26 : 3, ENEMY_COLORS[v], big ? 8 : 3.6, big ? 0.8 : 0.38, big ? 0.9 : 0.5);
+          P.burst(x, 0.4, z, big ? 26 : 3, v === 0 ? this.gruntHex : ENEMY_COLORS[v], big ? 8 : 3.6, big ? 0.8 : 0.38, big ? 0.9 : 0.5);
           if (big) { this.shake = Math.max(this.shake, v === EK.BOSS ? 1.2 : 0.3); this.rings.add(x, z, 0.5, v === EK.BOSS ? 9 : 3, 0.5, 0xc98aff); }
         }
         break;

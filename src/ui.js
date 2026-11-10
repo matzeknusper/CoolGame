@@ -1,7 +1,7 @@
 // DOM user interface: menus, level select, shop, HUD and result screens.
 import { t } from './i18n.js';
 import { UPGRADES, upgradeCost, playerStats } from './config.js';
-import { CAMPAIGN_LEVELS, LEVELS_PER_WORLD, WORLD_COUNT, levelInfo } from './levels.js';
+import { CAMPAIGN_LEVELS, LEVELS_PER_WORLD, WORLD_COUNT, levelInfo, HORDE_LEVELS, HORDE_PER_WORLD, hordeInfo } from './levels.js';
 import { SKINS, THEMES } from './themes.js';
 import { WORLD_IDS } from './levels.js';
 import { totalStars } from './save.js';
@@ -73,11 +73,12 @@ export class UI {
     });
   }
 
-  act(a, arg) {
+  act(a, arg, b) {
     const h = this.h;
     switch (a) {
-      case 'play': h.play(this.save.best); break;
-      case 'level': h.play(Number(arg)); break;
+      case 'play': h.play(this.save.mode === 'horde' ? this.save.hbest : this.save.best, this.save.mode); break;
+      case 'level': h.play(Number(arg), b?.dataset.mode || 'campaign'); break;
+      case 'mode': h.mode(arg); break;
       case 'levels': this.worldTab = Math.min(WORLD_COUNT - 1, levelInfo(Math.min(this.save.best, CAMPAIGN_LEVELS)).world); this.show('levels'); break;
       case 'shop': this.show('shop'); break;
       case 'settings': this.show('settings'); break;
@@ -99,6 +100,12 @@ export class UI {
     }
   }
 
+  modeSwitch() {
+    const m = this.save.mode === 'horde' ? 'horde' : 'campaign';
+    const b = (id, name, sub) => `<button class="mode ${m === id ? 'on' : ''} m-${id}" data-act="mode" data-arg="${id}"><b>${t(name)}</b><small>${t(sub)}</small></button>`;
+    return `<div class="mode-switch">${b('campaign', 'modeCampaign', 'modeCampaignSub')}${b('horde', 'modeHorde', 'modeHordeSub')}</div>`;
+  }
+
   coinsPill() { return `<div class="pill coin-pill">${I.coin}<span>${fmt(this.save.coins)}</span></div>`; }
   starsPill() { return `<div class="pill star-pill"><span class="star on">${I.star}</span><span>${totalStars(this.save)}</span></div>`; }
 
@@ -107,19 +114,43 @@ export class UI {
     const s = this.save;
     let html = '';
     if (name === 'home') {
-      const info = levelInfo(s.best);
+      const horde = s.mode === 'horde';
+      const lvl = horde ? s.hbest : s.best;
+      const info = horde ? hordeInfo(lvl) : levelInfo(lvl);
       const wname = t('worlds')[info.world];
       html = `<div class="screen home">
         <div class="top-row">${this.starsPill()}${this.coinsPill()}</div>
-        <div class="logo"><span class="l1">${t('title1')}</span><span class="l2">${t('title2')}</span><div class="tag">${t('tagline')}</div></div>
+        <div class="logo"><span class="l1">${t('title1')}</span><span class="l2">${t('title2')}</span><div class="tag">${t(horde ? 'taglineHorde' : 'tagline')}</div></div>
         <div class="home-actions">
-          <button class="btn big primary pulse" data-act="play">${I.play}<span>${t('level')} ${s.best}</span><small>${info.cycle ? t('endless') + ' · ' : ''}${wname}${info.boss ? ' · ' + t('bossLevel') : ''}</small></button>
+          ${this.modeSwitch()}
+          <button class="btn big primary pulse" data-act="play">${I.play}<span>${t('level')} ${lvl}</span><small>${info.cycle ? t('endless') + ' · ' : ''}${wname}${info.boss ? ' · ' + t('bossLevel') : ''}</small></button>
           <div class="row">
             <button class="btn" data-act="levels">${I.grid}<span>${t('levels')}</span></button>
             <button class="btn" data-act="shop">${I.cart}<span>${t('upgrades')}</span>${this.canBuy() ? '<i class="dot"></i>' : ''}</button>
             <button class="btn square" data-act="settings" aria-label="${t('settings')}">${I.gear}</button>
           </div>
         </div></div>`;
+    } else if (name === 'levels' && s.mode === 'horde') {
+      let rows = '';
+      for (let w = 0; w < WORLD_COUNT; w++) {
+        const th = THEMES[WORLD_IDS[w]];
+        let grid = '';
+        for (let k = 0; k < HORDE_PER_WORLD; k++) {
+          const n = w * HORDE_PER_WORLD + k + 1;
+          const open = n <= s.hbest;
+          const st = s.hstars[n] || 0;
+          const boss = k === HORDE_PER_WORLD - 1;
+          grid += `<button class="lvl ${open ? '' : 'locked'} ${boss ? 'boss' : ''} ${n === s.hbest ? 'current' : ''}" ${open ? `data-act="level" data-mode="horde" data-arg="${n}"` : 'disabled'}>
+            <b>${open ? (boss ? I.skull : n) : I.lock}</b>
+            <span class="stars">${[1, 2, 3].map((i) => `<i class="star ${st >= i ? 'on' : ''}">${I.star}</i>`).join('')}</span></button>`;
+        }
+        rows += `<div class="world-card slim" style="--a:${hex(th.skyTop)};--b:${hex(th.skyMid)};--c:${hex(th.skyBot)}"><div class="world-head"><h3>${t('worlds')[w]}</h3></div><div class="lvl-grid">${grid}</div></div>`;
+      }
+      const endless = s.hbest > HORDE_LEVELS ? `<button class="btn primary wide" data-act="level" data-mode="horde" data-arg="${s.hbest}">${I.play}<span>${t('endless')}: ${t('level')} ${s.hbest}</span></button>` : '';
+      html = `<div class="screen panel-screen">
+        <div class="top-row"><button class="icon-btn" data-act="home">${I.back}</button><h2>${t('levels')}</h2>${this.starsPill()}</div>
+        ${this.modeSwitch()}
+        <div class="scroll">${rows}${endless}</div></div>`;
     } else if (name === 'levels') {
       const w = this.worldTab;
       const th = THEMES[WORLD_IDS[w]];
@@ -143,6 +174,7 @@ export class UI {
       const endless = s.best > CAMPAIGN_LEVELS ? `<button class="btn primary wide" data-act="level" data-arg="${s.best}">${I.play}<span>${t('endless')}: ${t('level')} ${s.best}</span></button>` : '';
       html = `<div class="screen panel-screen">
         <div class="top-row"><button class="icon-btn" data-act="home">${I.back}</button><h2>${t('levels')}</h2>${this.starsPill()}</div>
+        ${this.modeSwitch()}
         <div class="wtabs">${tabs}</div>
         <div class="world-card" style="--a:${hex(th.skyTop)};--b:${hex(th.skyMid)};--c:${hex(th.skyBot)}">
           <div class="world-head"><div><small>${t('world')} ${w + 1}</small><h3>${t('worlds')[w]}</h3></div><div class="pill star-pill"><span class="star on">${I.star}</span><span>${wst}/${LEVELS_PER_WORLD * 3}</span></div></div>
@@ -216,8 +248,8 @@ export class UI {
       const d = data;
       const stars = [1, 2, 3].map((i) => `<i class="star big ${d.stars >= i ? 'on pop' : ''}" style="animation-delay:${0.25 + i * 0.28}s">${I.star}</i>`).join('');
       html = `<div class="screen overlay result ${d.won ? 'won' : 'lost'}"><div class="card">
-        <small class="res-level">${t('level')} ${d.n} · ${d.world}</small>
-        <h2>${d.won ? (d.boss ? t('bossWin') : t('win')) : t('lose')}</h2>
+        <small class="res-level">${d.horde ? t('modeHorde') + ' · ' : ''}${t('level')} ${d.n} · ${d.world}</small>
+        <h2>${d.won ? (d.horde ? t('hordeWin') : d.boss ? t('bossWin') : t('win')) : t('lose')}</h2>
         ${d.won ? `<div class="res-stars">${stars}</div>` : `<div class="res-sad"><span class="blob sad" style="--c:${d.skin}"><i></i><i></i></span></div>`}
         <div class="res-rows">
           <div><span>${t('collected')}</span><b>${I.coin}${d.collected}</b></div>
@@ -258,9 +290,14 @@ export class UI {
     this.hud.classList.toggle('hidden', !on);
     this.hudCache = {};
     if (on && level) {
-      const info = levelInfo(level.n);
-      $('#hud-level').textContent = `${t('level')} ${level.n}`;
-      $('#hud-stages').innerHTML = level.stages.map((s) => `<i class="${s.boss ? 'boss' : ''}"></i>`).join('');
+      const horde = level.mode === 'horde';
+      const info = horde ? hordeInfo(level.n) : levelInfo(level.n);
+      $('#hud-level').textContent = `${horde ? t('modeHorde') : t('level')} ${level.n}`;
+      // campaign: one dot per stage, horde: one dot per wave
+      $('#hud-stages').innerHTML = horde
+        ? level.stages[0].horde.waves.map(() => '<i></i>').join('') + (level.stages[0].horde.bossHp ? '<i class="boss"></i>' : '')
+        : level.stages.map((s) => `<i class="${s.boss ? 'boss' : ''}"></i>`).join('');
+      this.hud.classList.toggle('horde', horde);
       $('#hud-banner').className = '';
       $('#hud-banner').textContent = '';
       this.bossName = t('bosses')[info.world];
@@ -277,15 +314,16 @@ export class UI {
     const st = sim.level.stages[sim.stage];
     const fort = sim.forts[sim.stage];
     const boss = st.boss;
-    const hp = boss ? sim.bossHp : fort.hp, max = boss ? sim.bossMax : fort.max;
+    const horde = !!st.horde;
+    const hp = horde ? sim.hordeLeft : boss ? sim.bossHp : fort.hp, max = horde ? sim.hordeTotal : boss ? sim.bossMax : fort.max;
     this.set('hud-fort', Math.round((Math.max(0, hp) / Math.max(1, max)) * 200), (n, v) => { n.style.transform = `scaleX(${v / 200})`; });
-    this.set('hud-fort-text', (boss ? this.bossName + ' · ' : '') + Math.ceil(Math.max(0, hp)), (n, v) => { n.textContent = v; });
+    this.set('hud-fort-text', (horde ? t('horde') + ' · ' : boss ? this.bossName + ' · ' : '') + Math.ceil(Math.max(0, hp)), (n, v) => { n.textContent = v; });
     this.set('hud-shield', Math.round((Math.max(0, sim.shield) / sim.shieldMax) * 100), (n, v) => { n.style.transform = `scaleX(${v / 100})`; n.parentNode.classList.toggle('low', v < 35); });
     this.set('hud-shield-text', Math.max(0, sim.shield), (n, v) => { n.textContent = v; });
     this.set('hud-mega', Math.round(sim.megaCharge * 50), (n, v) => { n.style.transform = `scaleX(${v / 50})`; n.parentNode.parentNode.classList.toggle('ready', v >= 50); });
     this.set('hud-crowd', sim.pn, (n, v) => { n.textContent = v; });
     this.set('hud-coins', coins, (n, v) => { n.textContent = fmt(v); });
-    this.set('hud-stages', sim.stage, (n, v) => { [...n.children].forEach((c, i) => { c.classList.toggle('done', i < v); c.classList.toggle('cur', i === v); }); });
+    this.set('hud-stages', horde ? sim.waveIdx - 1 + (sim.hw && sim.hw.boss ? 1 : 0) : sim.stage, (n, v) => { [...n.children].forEach((c, i) => { c.classList.toggle('done', i < v); c.classList.toggle('cur', i === v); }); });
     const chips = (sim.rapidT > 0 ? 'r' + Math.ceil(sim.rapidT) : '') + (sim.freezeT > 0 ? 'f' + Math.ceil(sim.freezeT) : '');
     this.set('hud-chips', chips, (n) => {
       n.innerHTML = (sim.rapidT > 0 ? `<span class="chip rapid">${I.bolt}${Math.ceil(sim.rapidT)}s</span>` : '') + (sim.freezeT > 0 ? `<span class="chip freeze">❄ ${Math.ceil(sim.freezeT)}s</span>` : '');

@@ -47,6 +47,7 @@ export const THEMES = {
     ground: 'city', groundA: '#0b0c22', groundB: '#2a1a5a',
     light: 0xd8c8ff, ambientSky: 0x7a6ad6, ambientGround: 0x3a2a8a,
     fortA: 0x2a2450, fortB: 0x15122e, fortRoof: 0xff3bd4,
+    enemy: 0xff3f86, // purple grunts would drown on the dark neon track
     decor: 'neon', ambient: 'sparks', ambientColor: 0x7af7ff, clouds: 0, stars: true,
     music: { root: 58, scale: 'minor', bpm: 126, lead: 'sawtooth' },
   },
@@ -57,6 +58,7 @@ export const THEMES = {
     ground: 'nebula', groundA: '#12072e', groundB: '#5a1f8a',
     light: 0xffe6ff, ambientSky: 0x9a7af0, ambientGround: 0x5a2a9a,
     fortA: 0x3a2a7a, fortB: 0x1a1240, fortRoof: 0xffc93a,
+    enemy: 0xff6a3a,
     decor: 'cosmos', ambient: 'stardust', ambientColor: 0xfff0a0, clouds: 0, stars: true,
     music: { root: 61, scale: 'lydian', bpm: 116, lead: 'triangle' },
   },

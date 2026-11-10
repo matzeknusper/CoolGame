@@ -4,7 +4,7 @@ export const UNIT_SPEED = 9.5;
 export const UNIT_R = 0.3;
 export const PCAP = 1100; // hard cap of player units
 export const PSOFT = 800; // above this, clones merge into hp instead of new units
-export const ECAP = 520;
+export const ECAP = 1600; // large enough for the carpets of the horde mode
 
 // enemy kinds
 export const EK = { GRUNT: 0, RUNNER: 1, PANZER: 2, BOMBER: 3, BRUTE: 4, BOSS: 5 };
@@ -30,6 +30,7 @@ export const EV = {
   BLOCK_HIT: 9, BLOCK_DOWN: 10, PICKUP: 11, FALL: 12, SHELL_FIRE: 13, SHELL_LAND: 14,
   GATE_DONE: 15, BOSS_STOMP: 16, BOSS_WARN: 17, COIN: 18, STAGE: 19, WIN: 20, LOSE: 21,
   EXPLO: 22, BOSS_DOWN: 23, CAGE_FREE: 24, FREEZE: 25, SAW_KILL: 26, MEGA_READY: 27,
+  WAVE: 28, BOSS_IN: 29,
 };
 
 export const STATE = { PLAY: 0, ADVANCE: 1, WON: 2, LOST: 3 };

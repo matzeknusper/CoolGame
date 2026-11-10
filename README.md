@@ -19,9 +19,18 @@ Tore: **×N** vervielfacht jeden Wusel, **+N** verschenkt N Bonus-Wusels, **−N
 **÷N** dezimiert die Truppe. Ist die Mega-Leiste voll, ist der nächste Schuss ein Mega-Wusel.
 Gegner, die deine Linie erreichen, kosten Schild – bei 0 ist das Level verloren.
 
+## Spielmodi
+
+- **Eroberung** – der Feldzug: Tore nutzen, Gegner abwehren und die Festung am Ende der Bahn stürmen. 6 Welten × 10 Level, jedes 10. ein Bosskampf.
+- **Ansturm** – Horden-Modus: Eine riesige Grummel-Horde steht schon beim Start als Wand auf dem Feld und marschiert in
+  dichten Reihen über die ganze Bahnbreite auf dich zu. Wusels und Grummels heben sich 1:1 auf – nur mit vervielfachtem
+  Strom reibst du die Horde auf, bevor ihre Front deine Tore überrollt. 6 Welten × 5 Level, jedes 5. mit Hordenfürst.
+
+Beide Modi teilen sich Münzen, Upgrades und Sterne; danach geht es jeweils endlos weiter.
+
 ## Inhalt
 
-- 6 Welten mit je 10 Leveln (jedes 10. ist ein Bosskampf), danach Endlos-Modus
+- Zwei Modi mit zusammen 90 Leveln, danach Endlos-Modus
 - Neue Mechaniken werden nach und nach eingeführt: wandernde Tore, Sperren, Kisten, Käfige, Knallkugeln,
   Sägen, Drehbalken, Abgründe, Mörser, Power-ups sowie 5 Gegnertypen und Bosse
 - Mehrstufige Level, 3-Sterne-Wertung, 5 Upgrades, freischaltbare Farben
@@ -33,10 +42,11 @@ Gegner, die deine Linie erreichen, kosten Schild – bei 0 ist das Level verlore
 npm install
 npm run build        # baut dist/ (PWA) und kopiert das Spiel in das Android-Projekt
 npm run dev          # Build + lokaler Server auf http://localhost:8080
-npm test             # ein Bot spielt alle 60 Level durch (Balance-Check)
+npm test             # ein Bot spielt alle Level beider Modi durch (Balance-Check)
+npm run calibrate    # misst die Hordenstärke je Ansturm-Level neu ein (schreibt src/hordeTable.js)
 ```
 
-Nützliche URL-Parameter: `?debug` (FPS-Anzeige), `?level=25` (direkt in ein Level), `?bot` (Bot spielt),
+Nützliche URL-Parameter: `?debug` (FPS-Anzeige), `?level=25` (direkt in ein Level), `?horde=8` (direkt in ein Ansturm-Level), `?bot` (Bot spielt),
 `?q=low|medium|high` (Grafikstufe erzwingen).
 
 ### Aufbau
@@ -44,7 +54,7 @@ Nützliche URL-Parameter: `?debug` (FPS-Anzeige), `?level=25` (direkt in ein Lev
 | Pfad | Inhalt |
 | --- | --- |
 | `src/sim.js` | Spiellogik ohne Rendering (läuft auch in Node) |
-| `src/levels.js` | deterministischer Level-Generator und Balancing |
+| `src/levels.js`, `src/hordeTable.js` | deterministischer Level-Generator und Balancing (Hordenstärken sind per Bot eingemessen) |
 | `src/render.js`, `src/models.js`, `src/textures.js`, `src/fx.js` | three.js-Darstellung, prozedurale Modelle und Texturen, Partikel |
 | `src/audio.js` | synthetisierte Soundeffekte und Musik (WebAudio) |
 | `src/ui.js`, `src/styles.css` | Menüs und HUD |

@@ -1,6 +1,7 @@
 // Deterministic level generator: 6 worlds x 10 levels (every 10th is a boss), then endless.
 import { makeRng } from './rng.js';
 import { HW, OP, BT, PT, EK, ENEMY, UNIT_SPEED } from './config.js';
+import { HORDE_FLOW } from './hordeTable.js';
 
 export const LEVELS_PER_WORLD = 10;
 export const WORLD_COUNT = 6;
@@ -83,18 +84,40 @@ export function bestLane(level, si) {
   return { x: bx, v: best };
 }
 
-export function makeLevel(n) {
-  const info = levelInfo(n);
-  const rng = makeRng(n * 7919 + 13);
+// Horde mode ("Ansturm"): level h is balanced like campaign level hordeEq(h).
+export const HORDE_PER_WORLD = 5;
+export const HORDE_LEVELS = HORDE_PER_WORLD * WORLD_COUNT;
+export function hordeEq(h) {
+  return Math.min(CAMPAIGN_LEVELS, 2 + h * 2);
+}
+export function hordeInfo(h) {
+  const wn = (h - 1) % HORDE_LEVELS;
+  return {
+    n: h,
+    cycle: Math.floor((h - 1) / HORDE_LEVELS),
+    world: Math.floor(wn / HORDE_PER_WORLD),
+    idx: wn % HORDE_PER_WORLD,
+    boss: wn % HORDE_PER_WORLD === HORDE_PER_WORLD - 1,
+  };
+}
+// flow: optional override of the calibrated kill rate (used by tools/calibrate.mjs)
+export function makeHordeLevel(h, flow = 0) {
+  return makeLevel(hordeEq(h), h, flow);
+}
+
+export function makeLevel(n, H = 0, flowOverride = 0) {
+  const info = H ? hordeInfo(H) : levelInfo(n);
+  const rng = makeRng(n * 7919 + 13 + H * 104729);
   const f = features(n);
-  const { world, idx, boss, cycle } = info;
+  const { world, idx, cycle } = info;
+  const boss = H ? false : info.boss;
   const hard = n + cycle * 20; // difficulty scalar
   const rateExp = expectedRate(n);
 
   const L = {
-    n, world, idx, boss, cycle,
+    n: H || n, eq: n, mode: H ? 'horde' : 'campaign', world, idx, boss, cycle,
     worldId: WORLD_IDS[world],
-    intro: cycle === 0 ? INTROS[n] || null : null,
+    intro: H ? (H === 1 ? 'horde' : null) : cycle === 0 ? INTROS[n] || null : null,
     stages: [], gates: [], blockers: [], spinners: [], saws: [], holes: [], pickups: [], turrets: [],
     zEnd: 0,
   };
@@ -102,14 +125,15 @@ export function makeLevel(n) {
   let stageCount = 1 + (idx >= 3 ? 1 : 0) + (idx >= 8 || (world >= 4 && idx >= 6) ? 1 : 0);
   if (world === 0 && idx < 4) stageCount = 1;
   if (boss) stageCount = 2;
+  if (H) stageCount = 1;
 
   const mulMax = Math.min(36, 4 + n * 0.42);
   let z0 = 0;
 
   for (let si = 0; si < stageCount; si++) {
     const bossStage = boss && si === stageCount - 1;
-    const rows = bossStage ? 3 : n === 1 ? 2 : rng.int(3, Math.min(6, 3 + Math.floor(world / 2) + (idx > 4 ? 1 : 0)));
-    let z = z0 - 9;
+    const rows = H ? rng.int(3, 4) : bossStage ? 3 : n === 1 ? 2 : rng.int(3, Math.min(6, 3 + Math.floor(world / 2) + (idx > 4 ? 1 : 0)));
+    let z = z0 - (H ? 6.5 : 9);
     let budget = bossStage ? Math.max(4, mulMax * 0.6) : mulMax;
     let gateRows = 0;
     let lastFiller = null;
@@ -258,8 +282,8 @@ export function makeLevel(n) {
       if (f.pickup) o.push(['pickup', 2.2]);
       if (f.saw) o.push(['saw', 2.2]);
       if (f.spin) o.push(['spin', 2.2]);
-      if (f.hole) o.push(['hole', 2]);
-      if (f.turret) o.push(['turret', 1.8]);
+      if (f.hole && !H) o.push(['hole', 2]);
+      if (f.turret && !H) o.push(['turret', 1.8]);
       return o.filter((e) => e[0] !== lastFiller);
     };
     const introFiller = { crate: 'blockers', cage: 'blockers', tnt: 'blockers', pickup: 'pickup', saw: 'saw', spin: 'spin', hole: 'hole', turret: 'turret' };
@@ -282,13 +306,16 @@ export function makeLevel(n) {
       P[pat]();
       // intro levels must really show the new thing
       if (si === 0 && L.intro && r <= 1) forceIntro(L, L.intro, before, rng, rateExp);
-      z -= isGate ? rng.range(8.5, 10.5) : rng.range(6.5, 8);
+      // horde mode packs the gates close to the launcher so they stay behind the front line
+      if (H) z -= isGate ? rng.range(5, 5.6) : rng.range(4.5, 5);
+      else z -= isGate ? rng.range(8.5, 10.5) : rng.range(6.5, 8);
       // sprinkle an extra pickup now and then
       if (f.pickup && isGate && rng.chance(0.16)) { z += 4; P.pickup(); z -= 4; }
     }
 
-    const zFort = z - 5;
-    const stage = { z0, zFort, boss: bossStage, hp: 0, spawn: null, M: 1 };
+    // horde mode: a long open battlefield behind the gates, the horde pours in at its far end
+    const zFort = H ? z - rng.range(27, 31) : z - 5;
+    const stage = { z0, zFort, boss: bossStage, hp: 0, spawn: null, M: 1, horde: null };
     L.stages.push(stage);
     z0 = zFort - 7;
   }
@@ -300,7 +327,9 @@ export function makeLevel(n) {
     const st = L.stages[si];
     // every stage needs a satisfying multiplier lane
     let M = Math.max(1, bestLane(L, si).v);
-    for (let guard = 0; guard < 8 && M < 3.2; guard++) {
+    // (horde levels need a strong lane: that is what makes the big crowds)
+    const minM = H ? 4.5 + Math.min(3, H * 0.12) : 3.2;
+    for (let guard = 0; guard < 10 && M < minM; guard++) {
       const mine = L.gates.filter((g) => g.stage === si);
       let g = mine.find((q) => q.op === OP.MUL && !q.amp && q.val < 5) || mine.find((q) => q.op === OP.MUL && q.val < 5);
       if (g) g.val++;
@@ -337,6 +366,47 @@ export function makeLevel(n) {
       bruteHp: Math.round(8 + hard * 0.25 + rateExp * 0.5),
       specials,
     };
+    if (H) {
+      // The horde: a dense carpet of rows that marches down the whole track in waves. Units and
+      // enemies cancel 1:1, so the level is a race: grind the carpet down before its front
+      // reaches the gates (behind the front the stream is no longer multiplied).
+      // "out" is the kill rate this layout was calibrated for: the largest horde a competent bot
+      // with the expected upgrades reliably beats (tools/calibrate.mjs). The analytic estimate
+      // is only a fallback.
+      const measured = flowOverride || HORDE_FLOW[(H - 1) % HORDE_LEVELS];
+      const out = measured || rateExp * (1 + (M - 1) * 0.8);
+      const perRow = 16, rowGap = 0.52;
+      const dens = perRow / rowGap;
+      // the horde arrives a little faster than it can be killed, so its front creeps forward
+      const P = HORDE_P + Math.min(0.25, hard * 0.004);
+      const arrive = P * out;
+      const hmul = Math.max(1, Math.ceil(arrive / (dens * 1.75))); // hp per grunt keeps the pace sane
+      const v = Math.max(0.8, arrive / (dens * hmul));
+      const speedMul = v / ENEMY[EK.GRUNT].speed;
+      const secs = (34 + Math.min(16, H * 0.9)) * (1 + cycle * 0.2);
+      const heads = Math.round((out * secs) / hmul);
+      // a wall of enemies already fills the far part of the field when the level starts
+      const prefill = Math.min(Math.floor((heads * 0.42) / perRow), Math.floor(HORDE_WALL / rowGap));
+      const W = Math.min(6, 3 + Math.floor((H - 1) / 6));
+      const waves = [];
+      let wsum = 0;
+      for (let i = 0; i < W; i++) wsum += 1 + 0.25 * i + (i === W - 1 ? 0.4 : 0);
+      let total = 0;
+      for (let i = 0; i < W; i++) {
+        const last = i === W - 1;
+        // the first wave holds the wall
+        const share = (heads - prefill * perRow) * (1 + 0.25 * i + (last ? 0.4 : 0)) / wsum;
+        const count = Math.max(perRow * 2, Math.round(share + (i === 0 ? prefill * perRow : 0)));
+        const shield = f.panzer && i >= 1 ? Math.min(2, 1 + Math.floor(i / 3)) : 0;
+        const brutes = f.brute ? Math.floor(i / 2) + (last ? 1 : 0) : 0;
+        waves.push({ count, shield, brutes });
+        total += count * hmul + shield * perRow * 4 * hmul + brutes * st.spawn.bruteHp;
+      }
+      const bossHp = info.boss ? Math.round(out * 10) : 0;
+      st.horde = { waves, hmul, speedMul, perRow, rowGap, pause: 2.2, prefill, bossHp, total: total + bossHp };
+      st.hp = st.horde.total;
+      st.spawn.specials = st.spawn.specials.filter((q) => q.kind === EK.RUNNER || q.kind === EK.BOMBER);
+    }
   }
   return L;
 }
@@ -364,5 +434,9 @@ function forceIntro(L, intro, before, rng, rateExp) {
     }
   }
 }
+
+// horde tuning (verified with tools/stats.mjs --horde)
+const HORDE_P = 1.15; // arrival rate relative to the measured kill rate
+const HORDE_WALL = 23; // depth (track units) of the wall of enemies at the start
 
 export { ENEMY, UNIT_SPEED };

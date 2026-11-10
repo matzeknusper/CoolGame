@@ -12,13 +12,18 @@ const url = 'file://' + new URL('../dist/standalone.html', import.meta.url).path
 await page.addInitScript(() => {
   if (!localStorage.getItem('wuselwars.save.v1')) {
     const stars = {}; for (let i = 1; i <= 23; i++) stars[i] = 1 + (i * 7) % 3;
-    localStorage.setItem('wuselwars.save.v1', JSON.stringify({ v: 1, coins: 1840, best: 24, stars, up: { rate: 5, multi: 3, mega: 2, shield: 4, coins: 1 }, skin: 'mint', seen: {}, set: { sfx: true, music: true, vib: true, quality: 'low', lang: 'de', auto: false }, stat: { wins: 23, kills: 0 } }));
+    localStorage.setItem('wuselwars.save.v1', JSON.stringify({ v: 1, coins: 1840, best: 24, stars, mode: 'campaign', hbest: 8, hstars: { 1: 3, 2: 3, 3: 2, 4: 3, 5: 1, 6: 2, 7: 3 }, up: { rate: 5, multi: 3, mega: 2, shield: 4, coins: 1 }, skin: 'mint', seen: {}, set: { sfx: true, music: true, vib: true, quality: 'low', lang: 'de', auto: false }, stat: { wins: 23, kills: 0 } }));
   }
 });
 await page.goto(url + '?debug&nosw&noadapt');
 await page.waitForTimeout(2500);
 const shot = (n) => page.screenshot({ path: `${out}/ui-${n}.png` });
 await shot('home');
+// second game mode
+await page.tap('[data-act=mode][data-arg=horde]'); await page.waitForTimeout(1500); await shot('home-horde');
+await page.tap('[data-act=levels]'); await page.waitForTimeout(500); await shot('levels-horde');
+await page.tap('[data-act=mode][data-arg=campaign]'); await page.waitForTimeout(400);
+await page.tap('[data-act=home]'); await page.waitForTimeout(600);
 await page.tap('[data-act=levels]'); await page.waitForTimeout(500); await shot('levels');
 await page.tap('[data-act=world][data-arg="4"]'); await page.waitForTimeout(400); await shot('levels-locked');
 await page.tap('[data-act=home]'); await page.waitForTimeout(400);

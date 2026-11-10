@@ -12,8 +12,10 @@ const GZMAX = 140;
 const EVMAX = 600;
 
 export class Sim {
-  constructor(level, upgrades, seed = 1) {
+  constructor(level, upgrades, seed = 1, opts = {}) {
     this.level = level;
+    this.sandbox = !!opts.sandbox; // no enemies: used to measure the crowd's throughput
+    this.throughput = 0; // hp of units that ran off the far end (boss / horde stages)
     this.stats = playerStats(upgrades);
     this.rng = makeRng(seed * 9973 + level.n * 31);
 
@@ -62,7 +64,7 @@ export class Sim {
     this.pickups = level.pickups.map((p) => ({ ...p, dead: false }));
     this.turrets = level.turrets.map((t) => ({ ...t, t: t.ph + 2 }));
     this.shells = []; // {x,z,t,dur}
-    this.forts = level.stages.map((s) => ({ z: s.zFort, hp: s.hp, max: s.hp, dead: false, flash: 0, boss: s.boss }));
+    this.forts = level.stages.map((s) => ({ z: s.zFort, hp: s.hp, max: s.hp, dead: false, flash: 0, boss: s.boss || !!s.horde }));
 
     this.stage = 0;
     this.state = STATE.PLAY;
@@ -97,6 +99,13 @@ export class Sim {
     this.bossZ = 0;
     this.bossStompT = 0;
     this.bossWarn = 0;
+
+    this.speedMul = 1;
+    this.hw = null;
+    this.hordeLeft = 0;
+    this.hordeTotal = 0;
+    this.waveIdx = 0;
+    this.waveCount = 0;
 
     this.kills = 0;
     this.coins = 0;
@@ -133,6 +142,15 @@ export class Sim {
     this.burstT = 7;
     this.burstN = 0;
     this.specT = st.spawn.specials.map((s) => s.first);
+    this.speedMul = st.horde ? st.horde.speedMul : 1;
+    this.hw = null;
+    if (st.horde) {
+      const h = st.horde;
+      this.hw = { idx: 0, pend: 0, pendBrutes: 0, shield: 0, rowT: 0, timer: 0, boss: false, future: h.total };
+      this.hordeTotal = this.hordeLeft = h.total;
+      this.waveCount = h.waves.length;
+      this.waveIdx = 0;
+    }
     if (st.boss) {
       const hp = st.hp;
       const i = this.spawnEnemy(EK.BOSS, 0, st.zFort + 2.5, hp);
@@ -249,7 +267,7 @@ export class Sim {
     for (const b of this.blockers) if (b.flash > 0) b.flash -= dt;
     for (const f of this.forts) if (f.flash > 0) f.flash -= dt;
 
-    if (playing) this._spawner(dt, st);
+    if (playing && !this.sandbox) { if (st.horde) this._horde(dt, st); else this._spawner(dt, st); }
     this._turrets(dt);
     this._players(dt, fort, st);
     this._enemies(dt);
@@ -276,7 +294,7 @@ export class Sim {
       }
     }
     this.shells.length = 0;
-    this.addCoins(15 + this.level.n * 2.2, x, z);
+    this.addCoins(15 + (this.level.eq || this.level.n) * 2.2, x, z);
     if (this.stage < this.level.stages.length - 1) {
       this.advFrom = this.lz;
       this.advT = 0;
@@ -306,7 +324,18 @@ export class Sim {
       sx = this.bossX; sz = this.bossZ + 2.2; spread = 2.2;
     }
     const clampX = (x) => Math.max(-HW + 0.6, Math.min(HW - 0.6, x));
-    // special squads
+    this._specials(dt, sp, sx, sz, spread, ramp);
+    // grunts
+    let guard = 0;
+    while (this.spawnAcc >= 1 && this.en < ECAP - 8 && guard++ < 10) {
+      this.spawnAcc -= 1;
+      this.spawnEnemy(EK.GRUNT, clampX(sx + (this.rng() - 0.5) * 2 * spread), sz + this.rng() * 0.8, 1);
+    }
+    if (this.spawnAcc > 120) this.spawnAcc = 120;
+  }
+
+  // squads of special enemies on their own timers
+  _specials(dt, sp, sx, sz, spread, ramp) {
     const specs = sp.specials;
     for (let k = 0; k < specs.length; k++) {
       this.specT[k] -= dt;
@@ -316,17 +345,90 @@ export class Sim {
         const cx = sx + (this.rng() - 0.5) * 2 * spread;
         for (let c = 0; c < s.count; c++) {
           const hp = s.kind === EK.BRUTE ? sp.bruteHp : ENEMY[s.kind].hp;
-          this.spawnEnemy(s.kind, clampX(cx + (this.rng() - 0.5) * 2.4), sz + this.rng() * 1.6, hp);
+          const x = Math.max(-HW + 0.6, Math.min(HW - 0.6, cx + (this.rng() - 0.5) * 2.4));
+          this.spawnEnemy(s.kind, x, sz + this.rng() * 1.6, hp);
         }
       }
     }
-    // grunts
-    let guard = 0;
-    while (this.spawnAcc >= 1 && this.en < ECAP - 8 && guard++ < 10) {
-      this.spawnAcc -= 1;
-      this.spawnEnemy(EK.GRUNT, clampX(sx + (this.rng() - 0.5) * 2 * spread), sz + this.rng() * 0.8, 1);
+  }
+
+  _hordeRow(h, w, sp, z) {
+    const n = Math.min(w.pend, h.perRow);
+    const armored = w.shield > 0;
+    if (armored) w.shield--;
+    const kind = armored ? EK.PANZER : EK.GRUNT;
+    const hp = (armored ? 5 : 1) * h.hmul;
+    const span = 2 * HW - 1.0;
+    for (let k = 0; k < n; k++) {
+      const slot = n === h.perRow ? k : Math.floor(this.rng() * h.perRow);
+      // a little disorder makes the carpet look like a crowd instead of a grid
+      const x = -HW + 0.5 + ((slot + 0.5) / h.perRow) * span + (this.rng() - 0.5) * 0.3;
+      const i = this.spawnEnemy(kind, x, z + (this.rng() - 0.5) * 0.4, hp);
+      if (i >= 0) this.eoff[i] = x;
     }
-    if (this.spawnAcc > 120) this.spawnAcc = 120;
+    w.pend -= n;
+    if (w.pendBrutes > 0 && this.rng() < 0.12) {
+      w.pendBrutes--;
+      const i = this.spawnEnemy(EK.BRUTE, (this.rng() - 0.5) * 6, z + 0.8, sp.bruteHp);
+      if (i >= 0) this.eoff[i] = this.ex[i];
+    }
+  }
+
+  // Horde mode: waves of dense rows pour in at the far end and march down the whole track.
+  _horde(dt, st) {
+    const h = st.horde, w = this.hw, sp = st.spawn;
+    const sz = st.zFort + 1.2;
+    const wavesLeft = w.idx < h.waves.length;
+    // next wave: after a short pause once the previous one has fully marched in
+    if (w.pend <= 0) w.timer -= dt;
+    if (wavesLeft && w.pend <= 0 && (w.timer <= 0 || this.en === 0)) {
+      const wave = h.waves[w.idx];
+      w.pend += wave.count;
+      w.pendBrutes += wave.brutes;
+      w.shield = wave.shield;
+      w.timer = h.pause;
+      w.rowT = 0;
+      w.future -= wave.count * h.hmul + wave.shield * h.perRow * 4 * h.hmul + wave.brutes * sp.bruteHp;
+      this.emit(EV.WAVE, 0, sz, w.idx);
+      // the very first wave already stands on the field when the level starts
+      if (w.idx === 0) for (let r = h.prefill; r >= 1 && w.pend > 0; r--) this._hordeRow(h, w, sp, sz + r * h.rowGap);
+      w.idx++;
+      this.waveIdx = w.idx;
+    }
+    // pour in one row at a time
+    w.rowT -= dt;
+    if (w.rowT <= 0 && w.pend > 0 && this.en < ECAP - 40) {
+      w.rowT += h.rowGap / (ENEMY[EK.GRUNT].speed * h.speedMul);
+      if (w.rowT < 0) w.rowT = 0;
+      this._hordeRow(h, w, sp, sz);
+    }
+    // brutes that did not get a slot inside the rows bring up the rear
+    if (w.pend <= 0 && w.pendBrutes > 0 && w.rowT <= 0 && this.en < ECAP - 24) {
+      w.rowT = 0.7;
+      w.pendBrutes--;
+      const i = this.spawnEnemy(EK.BRUTE, (this.rng() - 0.5) * 6, sz + 0.8, sp.bruteHp);
+      if (i >= 0) this.eoff[i] = this.ex[i];
+    }
+    this._specials(dt, sp, 0, sz, HW - 1.2, 1);
+    // the boss of the horde walks in behind the last wave
+    if (!wavesLeft && w.pend <= 0 && h.bossHp && !w.boss) {
+      w.boss = true;
+      w.future -= h.bossHp;
+      const i = this.spawnEnemy(EK.BOSS, 0, sz + 1.5, h.bossHp);
+      this.bossAlive = i >= 0;
+      this.bossHp = this.bossMax = h.bossHp;
+      this.bossStompT = 6;
+      this.emit(EV.BOSS_IN, 0, sz, 0);
+    }
+    // remaining strength (for the HUD)
+    let alive = 0;
+    for (let i = 0; i < this.en; i++) if (this.ehp[i] > 0) alive += this.ehp[i];
+    this.hordeLeft = Math.max(0, w.future) + w.pend * h.hmul + w.pendBrutes * sp.bruteHp + alive;
+    // cleared?
+    if (!wavesLeft && w.pend <= 0 && w.pendBrutes <= 0 && (!h.bossHp || w.boss) && this.en === 0 && this.state === STATE.PLAY) {
+      this.hordeLeft = 0;
+      this._stageCleared(this.lx, this.lz - 12);
+    }
   }
 
   _turrets(dt) {
@@ -398,7 +500,7 @@ export class Sim {
       } else if (kind === EK.BOSS) {
         this.bossAlive = false;
         this.emit(EV.BOSS_DOWN, x, z, 0);
-        this.addCoins(40 + this.level.n * 3, x, z);
+        this.addCoins(40 + (this.level.eq || this.level.n) * 3, x, z);
         this._stageCleared(x, z);
       }
     }
@@ -413,7 +515,7 @@ export class Sim {
     const gates = this.gates, G = gates.length;
     const holes = this.holes, blockers = this.blockers, spinners = this.spinners, saws = this.saws, pickups = this.pickups;
     const fz = fort.z + 1.35;
-    const bossStage = st.boss;
+    const bossStage = st.boss || !!st.horde;
     const zEnd = this.level.zEnd;
     const px = this.px, pz = this.pz, php = this.php;
     for (let i = this.pn - 1; i >= 0; i--) {
@@ -543,6 +645,7 @@ export class Sim {
         }
       } else if (z < zEnd) {
         this.pfall[i] = 0.001;
+        this.throughput += php[i];
       }
       px[i] = x; pz[i] = z;
     }
@@ -653,6 +756,11 @@ export class Sim {
     const ex = this.ex, ez = this.ez;
     const holes = this.holes, blockers = this.blockers, spinners = this.spinners, saws = this.saws;
     const lz = this.lz, lx = this.lx;
+    const sm = this.speedMul;
+    // the horde keeps its formation and only bunches up a little right in front of the launcher
+    const hordeMode = !!this.hw;
+    const nearK = hordeMode ? 0.28 : 0.22, farK = hordeMode ? 0 : 0.3;
+    const nearDist = hordeMode ? 17 : 13;
     this.bigN = 0;
     for (let i = this.en - 1; i >= 0; i--) {
       if (this.ehp[i] <= 0) continue;
@@ -670,13 +778,15 @@ export class Sim {
         continue;
       }
       if (frozen) continue;
-      this.eph[i] += dt * def.speed * 3.2;
+      // formations march slowly, raiders (runners, bombers) stay quick
+      const spd = def.speed * (kind === EK.RUNNER || kind === EK.BOMBER ? Math.max(sm, 0.75) : sm);
+      this.eph[i] += dt * spd * 3.2;
       let x = ex[i];
-      const z = ez[i] + def.speed * dt;
+      const z = ez[i] + spd * dt;
       // steer to the launcher
       // far away the horde is a wide front, close to the launcher it converges on it
-      const near = lz - z < 13;
-      let tx = near ? lx + this.eoff[i] * 0.22 : lx * 0.3 + this.eoff[i];
+      const near = lz - z < nearDist;
+      let tx = near ? lx + this.eoff[i] * nearK : lx * farK + this.eoff[i];
       let lat = near ? def.lat + 1.6 : def.lat;
       if (kind === EK.RUNNER) tx += Math.sin(this.eph[i] * 0.35) * (near ? 1.0 : 2.2);
       else if (kind === EK.BRUTE) tx = lx * 0.7 + this.eoff[i] * 0.3;
@@ -961,11 +1071,14 @@ export class Bot {
   choose() {
     const s = this.sim;
     // 1) defend: an enemy is close to the launcher
+    // against a horde it pays to stay in the multiplier lane: the horde funnels towards the launcher
+    const hordeMode = !!s.hw;
+    const dangerDist = hordeMode ? 4.5 : 9;
     let danger = -1, dz = 1e9;
     for (let i = 0; i < s.en; i++) {
       if (s.ehp[i] <= 0) continue;
       const d = s.lz - s.ez[i];
-      if (d < 9 && d < dz) { dz = d; danger = i; }
+      if (d < dangerDist && d < dz) { dz = d; danger = i; }
     }
     if (danger >= 0 && this.rng() < 0.55 + this.skill * 0.45) { this.t = 0.1; return s.ex[danger]; }
     // 1b) thin out a horde that is building up in the near half before it arrives all at once
@@ -973,7 +1086,7 @@ export class Bot {
     for (let i = 0; i < s.en; i++) {
       if (s.ehp[i] > 0 && s.lz - s.ez[i] < 22) { near++; if (this.rng() < 1 / near) pick = i; }
     }
-    if (near > 14 && this.rng() < 0.5) return s.ex[pick];
+    if (!hordeMode && near > 14 && this.rng() < 0.5) return s.ex[pick];
     // 2) otherwise: best lane through the remaining gates
     const view = { stages: s.level.stages, gates: [], holes: s.holes, spinners: s.spinners, saws: s.saws, blockers: s.blockers };
     for (const g of s.gates) if (!g.dead && g.z < s.lz) view.gates.push(g);

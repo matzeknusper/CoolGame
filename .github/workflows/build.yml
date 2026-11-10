@@ -26,7 +26,7 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
-      - name: Balance check (a bot plays all 60 levels)
+      - name: Balance check (a bot plays every level of both modes)
         run: npm test
 
       - name: Build web app

@@ -1,6 +1,9 @@
 // German + English texts.
 const de = {
   title1: 'WUSEL', title2: 'WARS', tagline: 'Vermehre deine Wusels. Stürme die Festung.',
+  taglineHorde: 'Vermehre deine Wusels. Reib die Horde auf.',
+  modeCampaign: 'Eroberung', modeCampaignSub: 'Festungen stürmen', modeHorde: 'Ansturm', modeHordeSub: 'Horden besiegen',
+  horde: 'Horde', wave: 'Welle', lastWave: 'Letzte Welle!', hordeWin: 'Horde besiegt!', hordeBoss: 'Hordenfürst',
   play: 'Spielen', level: 'Level', levels: 'Level', upgrades: 'Upgrades', settings: 'Einstellungen', back: 'Zurück',
   continue: 'Weiter', retry: 'Nochmal', home: 'Menü', resume: 'Weiterspielen', restart: 'Neu starten', pause: 'Pause',
   next: 'Nächstes Level', win: 'Geschafft!', lose: 'Überrannt!', bossWin: 'Boss besiegt!',
@@ -23,6 +26,7 @@ const de = {
   reset: 'Fortschritt löschen', resetAsk: 'Wirklich alles löschen?', yes: 'Ja, löschen', no: 'Abbrechen',
   hintDrag: 'Halten zum Feuern – ziehen zum Zielen',
   intro: {
+    horde: ['Ansturm', 'Die Horde rollt in Wellen an. Reib sie komplett auf, bevor sie deine Linie erreicht – bleib in der Tor-Bahn, sie kommt zu dir!'],
     basics: ['So geht\'s', 'Schicke Wusels durch die Tore – jedes Tor vervielfacht sie!'],
     add: ['Bonus-Tor', 'Gelbe „+“-Tore schenken dir Extra-Wusels, bis ihr Vorrat leer ist.'],
     move: ['Wandernde Tore', 'Manche Tore bewegen sich – bleib dran!'],
@@ -55,6 +59,9 @@ const de = {
 
 const en = {
   title1: 'WUSEL', title2: 'WARS', tagline: 'Multiply your Wusels. Storm the fortress.',
+  taglineHorde: 'Multiply your Wusels. Wipe out the horde.',
+  modeCampaign: 'Conquest', modeCampaignSub: 'Storm fortresses', modeHorde: 'Onslaught', modeHordeSub: 'Defeat the hordes',
+  horde: 'Horde', wave: 'Wave', lastWave: 'Final wave!', hordeWin: 'Horde defeated!', hordeBoss: 'Horde Lord',
   play: 'Play', level: 'Level', levels: 'Levels', upgrades: 'Upgrades', settings: 'Settings', back: 'Back',
   continue: 'Continue', retry: 'Retry', home: 'Menu', resume: 'Resume', restart: 'Restart', pause: 'Paused',
   next: 'Next level', win: 'Cleared!', lose: 'Overrun!', bossWin: 'Boss defeated!',
@@ -77,6 +84,7 @@ const en = {
   reset: 'Erase progress', resetAsk: 'Really erase everything?', yes: 'Yes, erase', no: 'Cancel',
   hintDrag: 'Hold to fire – drag to aim',
   intro: {
+    horde: ['Onslaught', 'The horde rolls in waves. Wipe it out before it reaches your line – hold the gate lane, it comes to you!'],
     basics: ['How to play', 'Send Wusels through the gates – every gate multiplies them!'],
     add: ['Bonus gate', 'Yellow "+" gates hand out extra Wusels until their stock is empty.'],
     move: ['Moving gates', 'Some gates wander – keep tracking them!'],

@@ -1,6 +1,6 @@
 // Game bootstrap, main loop and screen flow.
 import { HW, EV, EK, STATE, UPGRADES, upgradeCost, BT } from './config.js';
-import { makeLevel, levelInfo } from './levels.js';
+import { makeLevel, makeHordeLevel, levelInfo, hordeInfo } from './levels.js';
 import { Sim, Bot } from './sim.js';
 import { Renderer } from './render.js';
 import { AudioSys } from './audio.js';
@@ -45,6 +45,7 @@ let endShown = false;
 let endDelay = 0;
 let coinsBefore = 0;
 let levelN = 1;
+let gameMode = 'campaign'; // 'campaign' (storm fortresses) | 'horde' (defeat the waves)
 let hintOn = false;
 let lastVib = 0;
 
@@ -70,8 +71,9 @@ function musicFor(lv, m) {
 // ---- flow --------------------------------------------------------------------------------
 function startMenu() {
   mode = 'menu';
-  levelN = save.best;
-  level = makeLevel(levelN);
+  gameMode = save.mode === 'horde' ? 'horde' : 'campaign';
+  levelN = gameMode === 'horde' ? save.hbest : save.best;
+  level = gameMode === 'horde' ? makeHordeLevel(levelN) : makeLevel(levelN);
   sim = new Sim(level, { rate: 8, multi: 6, mega: 4, shield: 15 }, (Math.random() * 1000) | 0);
   bot = new Bot(sim, 0.7, (Math.random() * 1000) | 0);
   renderer.buildLevel(level, sim);
@@ -82,9 +84,11 @@ function startMenu() {
   musicFor(level, 'menu');
 }
 
-function startLevel(n) {
+function startLevel(n, gm = gameMode) {
   levelN = n;
-  level = makeLevel(n);
+  gameMode = gm === 'horde' ? 'horde' : 'campaign';
+  if (save.mode !== gameMode) { save.mode = gameMode; storeSave(save); }
+  level = gameMode === 'horde' ? makeHordeLevel(n) : makeLevel(n);
   sim = new Sim(level, save.up, (Math.random() * 100000) | 0);
   bot = AUTOBOT ? new Bot(sim, 0.85, 3) : null;
   renderer.buildLevel(level, sim);
@@ -96,7 +100,7 @@ function startLevel(n) {
   ui.hide();
   ui.showHud(true, level);
   ui.updateHud(sim, 0);
-  hintOn = n <= 2 && !save.set.auto;
+  hintOn = n <= 2 && gameMode === 'campaign' && !save.set.auto;
   ui.hint(hintOn, t('hintDrag'));
   if (level.intro && !save.seen[level.intro]) {
     ui.introCard(level.intro);
@@ -110,13 +114,16 @@ function startLevel(n) {
 function finish() {
   const won = sim.state === STATE.WON;
   const stars = sim.stars();
-  const first = !save.stars[levelN];
-  const reward = levelReward(levelN, sim.coins, stars, won, first);
+  const horde = gameMode === 'horde';
+  const starMap = horde ? save.hstars : save.stars;
+  const first = !starMap[levelN];
+  const reward = levelReward(level.eq || levelN, sim.coins, stars, won, first);
   const bonus = reward - sim.coins;
   save.coins += reward;
   if (won) {
-    save.stars[levelN] = Math.max(save.stars[levelN] || 0, stars);
-    save.best = Math.max(save.best, levelN + 1);
+    starMap[levelN] = Math.max(starMap[levelN] || 0, stars);
+    if (horde) save.hbest = Math.max(save.hbest, levelN + 1);
+    else save.best = Math.max(save.best, levelN + 1);
     save.stat.wins++;
   }
   save.stat.kills += sim.kills;
@@ -124,9 +131,9 @@ function finish() {
   mode = 'result';
   ui.showHud(false);
   ui.introCard(null);
-  const info = levelInfo(levelN);
+  const info = horde ? hordeInfo(levelN) : levelInfo(levelN);
   ui.show('result', {
-    won, stars, n: levelN, boss: info.boss, world: t('worlds')[info.world], collected: sim.coins, bonus: Math.max(0, bonus), total: reward,
+    won, stars, n: levelN, horde, boss: info.boss, world: t('worlds')[info.world], collected: sim.coins, bonus: Math.max(0, bonus), total: reward,
     tip: t('tips')[(Math.random() * t('tips').length) | 0], skin: '#' + skinColor().toString(16).padStart(6, '0'),
   });
   if (won) for (let i = 0; i < stars; i++) setTimeout(() => audio.play('star', i), 420 + i * 280);
@@ -134,7 +141,14 @@ function finish() {
 
 const handlers = {
   click: () => { audio.unlock(); audio.play('click'); },
-  play: (n) => startLevel(n),
+  play: (n, gm) => startLevel(n, gm),
+  mode: (m) => {
+    save.mode = m === 'horde' ? 'horde' : 'campaign';
+    storeSave(save);
+    // on the home screen the scene behind the menu shows the chosen mode
+    if (ui.screen === 'home') startMenu();
+    else ui.show('levels');
+  },
   home: () => startMenu(),
   pause: () => { if (mode === 'play') { mode = 'paused'; ui.show('pause'); } },
   resume: () => { if (mode === 'paused') { mode = 'play'; ui.hide(); } },
@@ -280,6 +294,17 @@ function processEvents(silent) {
       case EV.FREEZE: audio.play('freeze'); break;
       case EV.SAW_KILL: audio.play('saw'); break;
       case EV.MEGA_READY: audio.play('megaReady'); break;
+      case EV.WAVE: {
+        const count = sim.waveCount, idx = (v | 0) + 1;
+        ui.banner(idx === count && count > 1 ? t('lastWave') : `${t('wave')} ${idx}/${count}`, 'bad');
+        audio.play('warn');
+        break;
+      }
+      case EV.BOSS_IN:
+        ui.banner(`${t('hordeBoss')} ${t('bossIn')}`, 'bad');
+        audio.play('warn');
+        musicFor(level, 'boss');
+        break;
     }
   }
   sim.evn = 0;
@@ -364,7 +389,9 @@ async function boot() {
   ui = new UI(document.getElementById('ui'), save, handlers);
   bindInput();
   const startAt = Number(params.get('level'));
-  if (startAt > 0) startLevel(startAt);
+  const hordeAt = Number(params.get('horde'));
+  if (hordeAt > 0) startLevel(hordeAt, 'horde');
+  else if (startAt > 0) startLevel(startAt, 'campaign');
   else startMenu();
   document.getElementById('boot').classList.add('done');
   setTimeout(() => document.getElementById('boot').remove(), 700);

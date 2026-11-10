@@ -8,7 +8,8 @@
     "build": "node build.mjs",
     "dev": "node build.mjs --serve",
     "balance": "node tools/balance.mjs",
-    "test": "node tools/balance.mjs --quick"
+    "calibrate": "node tools/calibrate.mjs",
+    "test": "node tools/balance.mjs --quick && node tools/stats.mjs 2 0.8 1 --horde --min=90"
   },
   "devDependencies": {
     "@fontsource/lilita-one": "^5.3.0",

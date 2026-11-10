@@ -6,6 +6,9 @@ const DEFAULT = () => ({
   coins: 0,
   best: 1, // highest unlocked level
   stars: {}, // level -> 1..3
+  mode: 'campaign', // last played mode: 'campaign' | 'horde'
+  hbest: 1, // highest unlocked horde level
+  hstars: {},
   up: { rate: 0, multi: 0, mega: 0, shield: 0, coins: 0 },
   skin: 'mint',
   seen: {},
@@ -42,5 +45,6 @@ export function resetSave() {
 export function totalStars(s) {
   let t = 0;
   for (const k in s.stars) t += s.stars[k];
+  for (const k in s.hstars) t += s.hstars[k];
   return t;
 }

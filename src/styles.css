@@ -217,3 +217,18 @@ h2, h3, h4 { font-family: var(--head); font-weight: 400; margin: 0; letter-spaci
   #ui { font-size: clamp(13px, 2.1vh, 18px); }
   .logo .l1, .logo .l2 { font-size: clamp(48px, 15vh, 110px); }
 }
+
+/* ---- game modes ---- */
+.mode-switch { display: flex; gap: 0.5em; background: rgba(15, 8, 36, 0.6); padding: 0.3em; border-radius: 1.1em; backdrop-filter: blur(6px); }
+.mode { flex: 1; padding: 0.5em 0.4em 0.45em; border-radius: 0.85em; background: transparent; display: flex; flex-direction: column; align-items: center; line-height: 1.1; opacity: 0.7; }
+.mode b { font-family: var(--head); font-weight: 400; font-size: 1.15em; letter-spacing: 0.03em; }
+.mode small { font-size: 0.68em; font-weight: 800; opacity: 0.85; }
+.mode.on { opacity: 1; box-shadow: inset 0 0.1em 0 rgba(255, 255, 255, 0.25), 0 0.2em 0.5em rgba(0, 0, 0, 0.3); }
+.mode.m-campaign.on { background: linear-gradient(#5cf0b9, #20c98a); color: #06301f !important; }
+.mode.m-horde.on { background: linear-gradient(#b77aff, #7a2fe0); }
+.world-card.slim { padding: 0.6em 0.8em 0.8em; border-radius: 1.1em; }
+.world-card.slim .world-head { margin-bottom: 0.45em; }
+.world-card.slim .world-head h3 { font-size: 1.15em; }
+.world-card.slim .lvl { aspect-ratio: 1; }
+#hud.horde #hud-stages i { width: 1.1em; height: 0.5em; border-radius: 0.3em; }
+#hud.horde #hud-stages i.boss { width: 0.7em; height: 0.7em; border-radius: 0.15em; }
