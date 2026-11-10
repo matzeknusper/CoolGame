@@ -107,6 +107,9 @@ export class UI {
     return `<div class="mode-switch">${b('campaign', 'modeCampaign', 'modeCampaignSub')}${b('horde', 'modeHorde', 'modeHordeSub')}</div>`;
   }
 
+  // upgrades are kept per game mode (coins are shared)
+  ups() { return this.save.mode === 'horde' ? this.save.hup : this.save.up; }
+
   coinsPill() { return `<div class="pill coin-pill">${I.coin}<span>${fmt(this.save.coins)}</span></div>`; }
   starsPill() { return `<div class="pill star-pill"><span class="star on">${I.star}</span><span>${totalStars(this.save)}</span></div>`; }
 
@@ -184,12 +187,13 @@ export class UI {
     } else if (name === 'shop') {
       let body = '';
       if (this.shopTab === 'up') {
-        const cur = playerStats(s.up);
+        const ups = this.ups();
+        const cur = playerStats(ups);
         for (const def of UPGRADES) {
-          const lvl = s.up[def.id];
+          const lvl = ups[def.id];
           const maxed = lvl >= def.max;
           const cost = upgradeCost(def, lvl);
-          const nxt = playerStats({ ...s.up, [def.id]: lvl + 1 });
+          const nxt = playerStats({ ...ups, [def.id]: lvl + 1 });
           const val = {
             rate: [cur.fireRate.toFixed(1) + '/s', nxt.fireRate.toFixed(1) + '/s'],
             multi: [Math.round(cur.multiChance * 100) + '%', Math.round(nxt.multiChance * 100) + '%'],
@@ -220,6 +224,7 @@ export class UI {
       html = `<div class="screen panel-screen">
         <div class="top-row"><button class="icon-btn" data-act="home">${I.back}</button><h2>${t('upgrades')}</h2>${this.coinsPill()}</div>
         <div class="tabs"><button class="tab ${this.shopTab === 'up' ? 'on' : ''}" data-act="tab" data-arg="up">${t('upgrades')}</button><button class="tab ${this.shopTab === 'skin' ? 'on' : ''}" data-act="tab" data-arg="skin">${t('skins')}</button></div>
+        ${this.shopTab === 'up' ? this.modeSwitch() + `<p class="hint-line">${t('upSeparate')}</p>` : ''}
         <div class="scroll">${body}</div></div>`;
     } else if (name === 'settings' || name === 'pause') {
       const st = s.set;
@@ -272,7 +277,8 @@ export class UI {
   hide() { this.screen = null; this.screens.innerHTML = ''; }
 
   canBuy() {
-    return UPGRADES.some((d) => this.save.up[d.id] < d.max && upgradeCost(d, this.save.up[d.id]) <= this.save.coins);
+    const ups = this.ups();
+    return UPGRADES.some((d) => ups[d.id] < d.max && upgradeCost(d, ups[d.id]) <= this.save.coins);
   }
 
   countUp(node, to) {

@@ -111,6 +111,7 @@ export class Sim {
     this.waveCount = 0;
 
     this.dmgMul = 1; // explosion damage scale (tougher horde grunts)
+    this.killCoin = 0; // coins per defeated horde grunt
     // combo + frenzy ("Rausch"): kills fill a gauge, a full gauge doubles the fire rate for a while
     this.combo = 0;
     this.comboT = 0;
@@ -156,6 +157,7 @@ export class Sim {
     this.specT = st.spawn.specials.map((s) => s.first);
     this.speedMul = st.horde ? st.horde.speedMul : 1;
     this.dmgMul = st.horde ? st.horde.hmul : 1;
+    this.killCoin = st.horde ? (20 * (this.level.eq || 1)) / Math.max(1, st.horde.waves.reduce((a, w) => a + w.count, 0)) : 0;
     this.frenzyNeed = st.horde ? Math.max(60, st.horde.waves.reduce((a, w) => a + w.count, 0) / 4.5) : 24 + st.spawn.rate * 16;
     this.hw = null;
     if (st.horde) {
@@ -514,7 +516,9 @@ export class Sim {
       this.kills++;
       const x = this.ex[i], z = this.ez[i];
       this.emit(EV.POP_E, x, z, kind);
-      this.addCoins(0.12 + this.emax[i] * 0.05, x, z);
+      // a horde has thousands of heads: its coins are spread over them so a horde level pays
+      // about as much as the campaign level it is balanced like
+      this.addCoins(this.hw ? this.killCoin * (kind >= EK.BRUTE ? 6 : 1) : 0.12 + this.emax[i] * 0.05, x, z);
       // combo, frenzy gauge and announcer milestones
       this.combo++;
       this.comboT = 1.5;

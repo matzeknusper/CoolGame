@@ -20,6 +20,7 @@ if (DEBUG && params.get('up')) {
   // debug: ?up=rate,multi,mega,shield,coins (not persisted unless something else saves)
   const u = params.get('up').split(',').map(Number);
   save.up = { rate: u[0] | 0, multi: u[1] | 0, mega: u[2] | 0, shield: u[3] | 0, coins: u[4] | 0 };
+  save.hup = { ...save.up };
 }
 setLang(save.set.lang);
 
@@ -102,7 +103,8 @@ function startLevel(n, gm = gameMode) {
   gameMode = gm === 'horde' ? 'horde' : 'campaign';
   if (save.mode !== gameMode) { save.mode = gameMode; storeSave(save); }
   level = gameMode === 'horde' ? makeHordeLevel(n) : makeLevel(n);
-  sim = new Sim(level, save.up, (Math.random() * 100000) | 0);
+  // every mode has its own upgrades
+  sim = new Sim(level, gameMode === 'horde' ? save.hup : save.up, (Math.random() * 100000) | 0);
   bot = AUTOBOT ? new Bot(sim, 0.85, 3) : null;
   renderer.buildLevel(level, sim);
   mode = 'play';
@@ -162,7 +164,7 @@ const handlers = {
     storeSave(save);
     // on the home screen the scene behind the menu shows the chosen mode
     if (ui.screen === 'home') startMenu();
-    else ui.show('levels');
+    else ui.show(ui.screen === 'shop' ? 'shop' : 'levels');
   },
   home: () => startMenu(),
   pause: () => { if (mode === 'play') { mode = 'paused'; ui.show('pause'); } },
@@ -171,11 +173,12 @@ const handlers = {
   next: () => startLevel(Math.max(levelN + 1, 1)),
   buy: (id) => {
     const def = UPGRADES.find((u) => u.id === id);
-    const lvl = save.up[id];
+    const ups = save.mode === 'horde' ? save.hup : save.up;
+    const lvl = ups[id];
     const cost = upgradeCost(def, lvl);
     if (lvl >= def.max || save.coins < cost) { audio.play('deny'); return; }
     save.coins -= cost;
-    save.up[id]++;
+    ups[id]++;
     storeSave(save);
     audio.play('buy');
     vib(20);

@@ -30,7 +30,8 @@ Ein Mega-Wusel explodiert, wenn er fällt.
   dichten Reihen über die ganze Bahnbreite auf dich zu. Wusels und Grummels heben sich 1:1 auf – nur mit vervielfachtem
   Strom reibst du die Horde auf, bevor ihre Front deine Tore überrollt. 6 Welten × 5 Level, jedes 5. mit Hordenfürst.
 
-Beide Modi teilen sich Münzen, Upgrades und Sterne; danach geht es jeweils endlos weiter.
+Münzen und die Sterne für neue Farben gelten für beide Modi; Level-Fortschritt und **Upgrades hat jeder Modus für sich**.
+Nach dem letzten Level geht es jeweils endlos weiter.
 
 ## Inhalt
 

@@ -2,7 +2,8 @@
 //   node tools/balance.mjs            -> economy run (bot buys upgrades with earned coins)
 //   node tools/balance.mjs --quick    -> CI-style check, exits non-zero if a level is unwinnable
 //   node tools/balance.mjs --base     -> every level with zero upgrades (how hard is it un-upgraded?)
-import { makeLevel, CAMPAIGN_LEVELS } from '../src/levels.js';
+//   node tools/balance.mjs --horde    -> the same for the horde mode (its own upgrades, earned in it)
+import { makeLevel, makeHordeLevel, hordeEq, CAMPAIGN_LEVELS, HORDE_LEVELS } from '../src/levels.js';
 import { Sim, Bot } from '../src/sim.js';
 import { STATE, UPGRADES, upgradeCost } from '../src/config.js';
 import { levelReward } from '../src/economy.js';
@@ -10,11 +11,12 @@ import { levelReward } from '../src/economy.js';
 const args = process.argv.slice(2);
 const quick = args.includes('--quick');
 const base = args.includes('--base');
-const upto = Number((args.find((a) => a.startsWith('--to=')) || '').slice(5)) || CAMPAIGN_LEVELS;
+const horde = args.includes('--horde');
+const upto = Number((args.find((a) => a.startsWith('--to=')) || '').slice(5)) || (horde ? HORDE_LEVELS : CAMPAIGN_LEVELS);
 const skill = Number((args.find((a) => a.startsWith('--skill=')) || '').slice(8)) || 0.8;
 
 export function play(n, upgrades, seed = 1, sk = skill) {
-  const level = makeLevel(n);
+  const level = horde ? makeHordeLevel(n) : makeLevel(n);
   const sim = new Sim(level, upgrades, seed);
   const bot = new Bot(sim, sk, seed * 13 + n);
   const dt = 1 / 60;
@@ -40,7 +42,7 @@ for (let n = 1; n <= upto; n++) {
   for (;;) {
     r = play(n, base ? {} : up, 1 + tries);
     tries++;
-    const rew = levelReward(n, r.sim.coins, r.stars, r.won, true);
+    const rew = levelReward(horde ? hordeEq(n) : n, r.sim.coins, r.stars, r.won, true);
     if (!base) wallet += rew;
     if (!base) {
       // buy greedily in a fixed priority rotation

@@ -9,7 +9,8 @@ const DEFAULT = () => ({
   mode: 'campaign', // last played mode: 'campaign' | 'horde'
   hbest: 1, // highest unlocked horde level
   hstars: {},
-  up: { rate: 0, multi: 0, mega: 0, shield: 0, coins: 0 },
+  up: { rate: 0, multi: 0, mega: 0, shield: 0, coins: 0 }, // upgrades of the campaign
+  hup: { rate: 0, multi: 0, mega: 0, shield: 0, coins: 0 }, // upgrades of the horde mode (coins are shared)
   skin: 'mint',
   seen: {},
   set: { sfx: true, music: true, vib: true, quality: 'auto', lang: null, auto: false },
@@ -25,6 +26,8 @@ export function loadSave() {
       if (s && s.v === 1) {
         Object.assign(d, s);
         d.up = { ...DEFAULT().up, ...s.up };
+        // saves from before the modes had separate upgrades keep what they had in both modes
+        d.hup = s.hup ? { ...DEFAULT().hup, ...s.hup } : { ...d.up };
         d.set = { ...DEFAULT().set, ...s.set };
         d.stat = { ...DEFAULT().stat, ...s.stat };
       }
